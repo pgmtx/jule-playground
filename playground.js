@@ -6,6 +6,12 @@ function main() {
     runButton.onclick = () => {
         alert("you clicked run button");
     };
+
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.key === "Enter") {
+        runButton.click();
+      }
+    })
 }
 
 main();

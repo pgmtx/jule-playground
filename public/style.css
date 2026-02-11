@@ -17,3 +17,11 @@ button {
 	color: #333;
 	border-radius: 4px;
 }
+
+pre {
+	background-color: rgb(230, 230, 230);
+	padding: 1em;
+	border-radius: 5px;
+	margin: 0;
+	overflow-x: auto;
+}

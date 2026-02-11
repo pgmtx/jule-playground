@@ -128,12 +128,19 @@ runButton.onclick = () => {
 			outputElement.textContent = output;
 		})
 		.catch((err) => {
-			outputElement.textContent = "Error: " + err;
+			outputElement.textContent = `Error: ${err}`;
 		});
 };
 
-document.addEventListener("keydown", (e) => {
-	if (e.ctrlKey && e.key === "Enter") {
-		runButton.click();
-	}
-});
+document.addEventListener(
+	"keydown",
+	(e) => {
+		if (e.ctrlKey && e.key === "Enter") {
+			// This and the capture parameter below prevents from the newline addition
+			// inside the code editor.
+			e.preventDefault();
+			runButton.click();
+		}
+	},
+	{ capture: true },
+);

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 )
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
@@ -25,12 +26,14 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 		"jule-clang",
 		"sh", "-c", "/jule/bin/julec build . && ./main",
 	)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error: %v\n%s", err, output), 500)
-		return
-	}
-	w.Write(output)
+
+	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	output, _ := cmd.CombinedOutput()
+
+	// Jule error messages use ANSI color codes, so they must be filtered out for
+	// web display.
+	outputStr := ansi.ReplaceAllString(string(output), "")
+	w.Write([]byte(outputStr))
 }
 
 func main() {

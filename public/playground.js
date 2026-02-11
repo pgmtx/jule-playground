@@ -114,15 +114,22 @@ const editor = new EditorView({
 
 const runButton = document.getElementById("run-button");
 runButton.onclick = () => {
+	const outputElement = document.getElementById("output");
+	outputElement.textContent = "Compiling...";
+
 	const inputCode = editor.state.doc.toString();
 	fetch("/send", {
 		method: "POST",
 		body: inputCode,
 		headers: { "Content-Type": "text/plain" },
 	})
-	.then(res => res.text())
-	.then(output => console.log(output))
-	.catch(err => console.log(err));
+		.then((res) => res.text())
+		.then((output) => {
+			outputElement.textContent = output;
+		})
+		.catch((err) => {
+			outputElement.textContent = "Error: " + err;
+		});
 };
 
 document.addEventListener("keydown", (e) => {

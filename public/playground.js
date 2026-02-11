@@ -114,8 +114,12 @@ const editor = new EditorView({
 
 const runButton = document.getElementById("run-button");
 runButton.onclick = () => {
-	console.log("Run button clicked!");
-	console.log("Code:\n", editor.state.doc.toString());
+	const inputCode = editor.state.doc.toString();
+	fetch("/send", {
+		method: "POST",
+		body: inputCode,
+		headers: { "Content-Type": "text/plain" },
+	});
 };
 
 document.addEventListener("keydown", (e) => {

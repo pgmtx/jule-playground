@@ -119,7 +119,10 @@ runButton.onclick = () => {
 		method: "POST",
 		body: inputCode,
 		headers: { "Content-Type": "text/plain" },
-	});
+	})
+	.then(res => res.text())
+	.then(output => console.log(output))
+	.catch(err => console.log(err));
 };
 
 document.addEventListener("keydown", (e) => {

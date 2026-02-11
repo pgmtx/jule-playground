@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"os/exec"
 )
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
@@ -13,9 +15,22 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, _ := io.ReadAll(r.Body)
-	fmt.Println("Got: ", string(body))
-	fmt.Fprint(w, "OK")
+	codeInput, _ := io.ReadAll(r.Body)
+	os.WriteFile("main.jule", codeInput, 0644)
+
+	cmd := exec.Command(
+		"docker", "run", "--rm",
+		"-v", ".:/work",
+		"-w", "/work",
+		"jule-clang",
+		"sh", "-c", "/jule/bin/julec build . && ./main",
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error: %v\n%s", err, output), 500)
+		return
+	}
+	w.Write(output)
 }
 
 func main() {

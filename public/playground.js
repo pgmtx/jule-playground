@@ -114,12 +114,33 @@ const editor = new EditorView({
 
 const runButton = document.getElementById("run-button");
 runButton.onclick = () => {
-	console.log("Run button clicked!");
-	console.log("Code:\n", editor.state.doc.toString());
+	const outputElement = document.getElementById("output");
+	outputElement.textContent = "Compiling...";
+
+	const inputCode = editor.state.doc.toString();
+	fetch("/send", {
+		method: "POST",
+		body: inputCode,
+		headers: { "Content-Type": "text/plain" },
+	})
+		.then((res) => res.text())
+		.then((output) => {
+			outputElement.textContent = output;
+		})
+		.catch((err) => {
+			outputElement.textContent = `Error: ${err}`;
+		});
 };
 
-document.addEventListener("keydown", (e) => {
-	if (e.ctrlKey && e.key === "Enter") {
-		runButton.click();
-	}
-});
+document.addEventListener(
+	"keydown",
+	(e) => {
+		if (e.ctrlKey && e.key === "Enter") {
+			// This and the capture parameter below prevents from the newline addition
+			// inside the code editor.
+			e.preventDefault();
+			runButton.click();
+		}
+	},
+	{ capture: true },
+);

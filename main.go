@@ -28,7 +28,11 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	)
 
 	ansi := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	output, _ := cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error: %v\n%s", err, output), 500)
+		return
+	}
 
 	// Jule error messages use ANSI color codes, so they must be filtered out for
 	// web display.
@@ -41,6 +45,6 @@ func main() {
 	http.Handle("/", fs)
 
 	http.HandleFunc("/send", postHandler)
-	fmt.Println("http://localhost:8080")
+	fmt.Println("http://0.0.0.0:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

@@ -78,9 +78,9 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	fs := http.FileServer(http.Dir("./public"))
-	http.Handle("/", fs)
+	http.Handle("/playground/", http.StripPrefix("/playground/", fs))
 
-	http.HandleFunc("/send", postHandler)
-	fmt.Println("http://0.0.0.0:8080")
+	http.HandleFunc("/playground/compile", postHandler)
+	fmt.Println("http://0.0.0.0:8080/playground/")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

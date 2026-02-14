@@ -118,7 +118,7 @@ runButton.onclick = () => {
 	outputElement.textContent = "Compiling...";
 
 	const inputCode = editor.state.doc.toString();
-	fetch("/send", {
+	fetch("/playground/compile", {
 		method: "POST",
 		body: inputCode,
 		headers: { "Content-Type": "text/plain" },

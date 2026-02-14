@@ -7,15 +7,17 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
 
 var ansi *regexp.Regexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func executeCommand(w http.ResponseWriter, command string, args ...string) (string, bool) {
-	build := exec.Command(command, args...)
-	output, err := build.CombinedOutput()
+func executeCommand(w http.ResponseWriter, tempDir string, command string, args ...string) (string, bool) {
+	cmd := exec.Command(command, args...)
+	cmd.Dir = tempDir
+	output, err := cmd.CombinedOutput()
 
 	// Jule error messages use ANSI color codes, so they must be filtered out for
 	// web display.
@@ -46,8 +48,16 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tempDir, err := os.MkdirTemp("", "jule-playground-")
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	codePath := filepath.Join(tempDir, "main.jule")
 	codeInput, _ := io.ReadAll(r.Body)
-	os.WriteFile("main.jule", codeInput, 0644)
+	os.WriteFile(codePath, codeInput, 0644)
 
 	julecPath := os.Getenv("JULEC_PATH")
 	if julecPath == "" {
@@ -55,12 +65,12 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	const programName = "program"
-	_, ok := executeCommand(w, julecPath, "build", "-o", programName, ".")
+	_, ok := executeCommand(w, tempDir, julecPath, "build", "-o", programName, ".")
 	if !ok {
 		return
 	}
 
-	outputStr, ok := executeCommand(w, "./"+programName)
+	outputStr, ok := executeCommand(w, tempDir, filepath.Join(tempDir, programName))
 	if ok {
 		fmt.Fprint(w, outputStr)
 	}

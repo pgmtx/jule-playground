@@ -12,7 +12,10 @@ import (
 	"strings"
 )
 
-var ansi *regexp.Regexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+const maxConcurrentCompilations = 4
+
+var semaphore = make(chan struct{}, maxConcurrentCompilations)
+var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func executeCommand(w http.ResponseWriter, tempDir string, command string, args ...string) (string, bool) {
 	cmd := exec.Command(command, args...)
@@ -47,6 +50,9 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	semaphore <- struct{}{}        // acquire
+	defer func() { <-semaphore }() // release
 
 	tempDir, err := os.MkdirTemp("", "jule-playground-")
 	if err != nil {

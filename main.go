@@ -95,6 +95,7 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(tempDir)
 
+	os.Chmod(tempDir, 0777)
 	codePath := filepath.Join(tempDir, "main.jule")
 	codeInput, _ := io.ReadAll(r.Body)
 	os.WriteFile(codePath, codeInput, 0644)

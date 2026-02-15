@@ -4,19 +4,20 @@
 
 ## Setup
 
-### Locally
-
 You will need [Docker](https://www.docker.com/) and a [Go](https://go.dev) compiler.
+
+Clang and julec are isolated inside the Dockerfile, which can be built that way:
 
 ```
 docker build -t jule-clang .
-go run .
 ```
 
-Then open `0.0.0.0:8080` in your browser.
+### Locally
+
+Type `go run .` then open `0.0.0.0:8080/playground` in your browser.
 
 ### On a server
 
-You need to define a systemd service and check paths inside the script `deploy.sh`.
+You need to have Docker installed on the server.
 
-After that to create a `.env` file containing `SERVER_IP="your_server_ip"`, then you can execute `deploy.sh`.
+There is a [script](./deploy.sh) to easily deploy the project files. Before running it check out the paths and make sure to have a `.env` file containing `SERVER_IP="your_server_ip"`.

@@ -9,6 +9,7 @@ source .env
 CGO_ENABLED=0 go build -ldflags "-s -w" .
 ssh root@$SERVER_IP "systemctl stop playground"
 scp ./playground root@$SERVER_IP:/opt/playground/
+scp ./Dockerfile root@$SERVER_IP:/opt/playground/
 scp -r ./public root@$SERVER_IP:/opt/playground/
 ssh root@$SERVER_IP "systemctl start playground"
 echo "Code deployed successfully!"

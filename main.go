@@ -20,17 +20,38 @@ const maxConcurrentCompilations = 4
 var semaphore = make(chan struct{}, maxConcurrentCompilations)
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func executeDockerCommand(w http.ResponseWriter, tempDir string, command string, args ...string) (string, bool) {
+func compileAndRunCode(w http.ResponseWriter, tempDir string) (string, bool) {
 	// Useful to handle infinite loops
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, command, args...)
+	const programName = "program"
+	juleCommand := fmt.Sprintf("/jule/bin/julec build -o %s . && ./%s", programName, programName)
+	containerName := filepath.Base(tempDir)
+
+	cmd := exec.CommandContext(
+		ctx,
+		"docker", "run",
+		"--rm",
+		"--name", containerName,
+		"--network=none",
+		"--memory=512m",
+		"--cpus=1",
+		"--pids-limit=50", // to avoid fork bombs
+		"-u", "1000:1000", // to avoid root access
+		"--read-only",
+		"--tmpfs=/tmp:size=128m",
+		"--tmpfs=/root:size=16m",
+		"-v", tempDir+":/sandbox",
+		"--workdir=/sandbox",
+		"jule-clang",
+		"sh", "-c", juleCommand,
+	)
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
 
 	if ctx.Err() == context.DeadlineExceeded {
-		killCmd := exec.Command("docker", "kill", filepath.Base(tempDir))
+		killCmd := exec.Command("docker", "kill", containerName)
 		_ = killCmd.Run()
 		http.Error(w, "Compilation and execution timed out after 30s. Check for infinite loops or blocking calls.", 500)
 		return "", false
@@ -78,28 +99,7 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	codeInput, _ := io.ReadAll(r.Body)
 	os.WriteFile(codePath, codeInput, 0644)
 
-	const programName = "program"
-	juleCommand := fmt.Sprintf("/jule/bin/julec build -o %s . && ./%s", programName, programName)
-
-	outputMessage, ok := executeDockerCommand(
-		w, tempDir,
-		"docker", "run",
-		"--rm",
-		"--name", filepath.Base(tempDir),
-		"--network=none",
-		"--memory=512m",
-		"--cpus=1",
-		"--pids-limit=50", // to avoid fork bombs
-		"-u", "1000:1000", // to avoid root access
-		"--read-only",
-		"--tmpfs=/tmp:size=128m",
-		"--tmpfs=/root:size=16m",
-		"-v", tempDir+":/sandbox",
-		"--workdir=/sandbox",
-		"jule-clang",
-		"sh", "-c", juleCommand,
-	)
-	if ok {
+	if outputMessage, ok := compileAndRunCode(w, tempDir); ok {
 		fmt.Fprint(w, outputMessage)
 	}
 }

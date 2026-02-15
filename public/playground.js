@@ -118,6 +118,8 @@ runButton.onclick = () => {
 	outputElement.textContent = "Compiling...";
 
 	const inputCode = editor.state.doc.toString();
+
+	const start = performance.now();
 	fetch("/playground/compile", {
 		method: "POST",
 		body: inputCode,
@@ -125,6 +127,9 @@ runButton.onclick = () => {
 	})
 		.then((res) => res.text())
 		.then((output) => {
+			const end = performance.now();
+			const duration = (end - start) / 1000;
+			console.log("Compilation took", duration, "s");
 			outputElement.textContent = output;
 		})
 		.catch((err) => {

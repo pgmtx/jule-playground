@@ -21,25 +21,25 @@ func executeCommand(w http.ResponseWriter, tempDir string, command string, args 
 
 	// Jule error messages use ANSI color codes, so they must be filtered out for
 	// web display.
-	outputStr := ansi.ReplaceAllString(string(output), "")
-	outputStr = strings.TrimSpace(outputStr)
+	outputMessage := ansi.ReplaceAllString(string(output), "")
+	outputMessage = strings.TrimSpace(outputMessage)
 	// For some reason in some error messages there is a null character
 	// which is displayed as a square.
-	outputStr = strings.ReplaceAll(outputStr, "\x00", "")
+	outputMessage = strings.ReplaceAll(outputMessage, "\x00", "")
 
 	if err == nil {
-		return outputStr, true
+		return outputMessage, true
 	}
 
-	if outputStr != "" {
-		fmt.Println(outputStr)
-		http.Error(w, outputStr, 500)
+	if outputMessage != "" {
+		fmt.Println(outputMessage)
+		http.Error(w, outputMessage, 500)
 	} else {
 		fmt.Println("Error: ", err.Error())
 		http.Error(w, err.Error(), 500)
 	}
 
-	return outputStr, false
+	return outputMessage, false
 }
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
@@ -59,20 +59,25 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	codeInput, _ := io.ReadAll(r.Body)
 	os.WriteFile(codePath, codeInput, 0644)
 
-	julecPath := os.Getenv("JULEC_PATH")
-	if julecPath == "" {
-		julecPath = "julec"
-	}
-
 	const programName = "program"
-	_, ok := executeCommand(w, tempDir, julecPath, "build", "-o", programName, ".")
-	if !ok {
-		return
-	}
+	juleCommand := fmt.Sprintf("/jule/bin/julec build -o %s . && ./%s", programName, programName)
 
-	outputStr, ok := executeCommand(w, tempDir, filepath.Join(tempDir, programName))
+	outputMessage, ok := executeCommand(
+		w, tempDir,
+		"docker", "run",
+		"--rm",
+		"--network=none",
+		"--memory=512m",
+		"--cpus=1",
+		"--pids-limit=50",
+		"--tmpfs=/tmp:size=128m",
+		"-v", tempDir+":/sandbox",
+		"--workdir=/sandbox",
+		"jule-clang",
+		"sh", "-c", juleCommand,
+	)
 	if ok {
-		fmt.Fprint(w, outputStr)
+		fmt.Fprint(w, outputMessage)
 	}
 }
 

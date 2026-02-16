@@ -85,7 +85,20 @@ const style = HighlightStyle.define([
 ]);
 
 const jule = StreamLanguage.define({
-	token: (stream, _state) => {
+	startState() {
+		return { inRawStringLiteral: false };
+	},
+	token(stream, state) {
+		if (state.inRawStringLiteral) {
+			while (!stream.eol()) {
+				if (stream.next() === "`") {
+					state.inRawStringLiteral = false;
+					break;
+				}
+			}
+			return "string";
+		}
+
 		if (stream.eatSpace()) return null;
 		if (stream.match(/\/\/.*/)) return "lineComment";
 		if (
@@ -103,6 +116,12 @@ const jule = StreamLanguage.define({
 		if (stream.match(/[a-zA-Z_]\w*(?=\()/)) return "name";
 		if (stream.match(/[+\-*/%:=<>!&|]+/)) return "operator";
 		if (stream.match(/[a-zA-Z_]\w*/)) return "variableName";
+
+		if (stream.peek() === "`") {
+			stream.next();
+			state.inRawStringLiteral = true;
+			return "string";
+		}
 
 		stream.next();
 		return null;

@@ -85,11 +85,16 @@ const style = HighlightStyle.define([
 ]);
 
 const jule = StreamLanguage.define({
-	token(stream, _state) {
+	token: (stream, _state) => {
 		if (stream.eatSpace()) return null;
 		if (stream.match(/\/\/.*/)) return "lineComment";
-		if (stream.match(/"([^"\\]|\\.)*"/)) return "string";
-		if (stream.match(/'(\\.|[^'])'/)) return "string";
+		if (
+			stream.match(/`[^`]*`/) ||
+			stream.match(/"([^"\\]|\\.)*"/) ||
+			stream.match(/'([^']|\\.)'/)
+		) {
+			return "string";
+		}
 		if (stream.match(/'[^']*'/)) return "invalid";
 		if (stream.match(/\b\d+(\.\d+)?i?\b/)) return "number";
 		if (stream.match(typeRegex)) return "typeName";

@@ -20,6 +20,9 @@ const maxConcurrentCompilations = 2
 var semaphore = make(chan struct{}, maxConcurrentCompilations)
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
+var semaphore = make(chan struct{}, maxConcurrentCompilations)
+var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
 func compileAndRunCode(w http.ResponseWriter, tempDir string) (string, bool) {
 	// Useful to handle infinite loops
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

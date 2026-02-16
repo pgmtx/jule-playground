@@ -2,9 +2,16 @@ import {
 	HighlightStyle,
 	StreamLanguage,
 	syntaxHighlighting,
-} from "https://esm.sh/@codemirror/language@6.0.0";
-import { tags } from "https://esm.sh/@lezer/highlight@1.0.0";
-import { basicSetup, EditorView } from "https://esm.sh/codemirror@6.0.1";
+} from "https://esm.sh/@codemirror/language";
+import { tags } from "https://esm.sh/@lezer/highlight";
+import { basicSetup, EditorView } from "https://esm.sh/codemirror";
+import { keymap } from "https://esm.sh/@codemirror/view";
+import { indentWithTab } from "https://esm.sh/@codemirror/commands";
+
+const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+if (isMobile) {
+	document.getElementById("run-button").innerText = "Run";
+}
 
 const types = [
 	"bool",
@@ -85,11 +92,29 @@ const style = HighlightStyle.define([
 ]);
 
 const jule = StreamLanguage.define({
-	token(stream, _state) {
+	startState() {
+		return { inRawStringLiteral: false };
+	},
+	token(stream, state) {
+		if (state.inRawStringLiteral) {
+			while (!stream.eol()) {
+				if (stream.next() === "`") {
+					state.inRawStringLiteral = false;
+					break;
+				}
+			}
+			return "string";
+		}
+
 		if (stream.eatSpace()) return null;
 		if (stream.match(/\/\/.*/)) return "lineComment";
-		if (stream.match(/"([^"\\]|\\.)*"/)) return "string";
-		if (stream.match(/'(\\.|[^'])'/)) return "string";
+		if (
+			stream.match(/`[^`]*`/) ||
+			stream.match(/"([^"\\]|\\.)*"/) ||
+			stream.match(/'([^']|\\.)'/)
+		) {
+			return "string";
+		}
 		if (stream.match(/'[^']*'/)) return "invalid";
 		if (stream.match(/\b\d+(\.\d+)?i?\b/)) return "number";
 		if (stream.match(typeRegex)) return "typeName";
@@ -98,6 +123,12 @@ const jule = StreamLanguage.define({
 		if (stream.match(/[a-zA-Z_]\w*(?=\()/)) return "name";
 		if (stream.match(/[+\-*/%:=<>!&|]+/)) return "operator";
 		if (stream.match(/[a-zA-Z_]\w*/)) return "variableName";
+
+		if (stream.peek() === "`") {
+			stream.next();
+			state.inRawStringLiteral = true;
+			return "string";
+		}
 
 		stream.next();
 		return null;
@@ -108,7 +139,12 @@ const editor = new EditorView({
 	doc: `fn main() {
   println("Hello World!")
 }`,
-	extensions: [basicSetup, jule, syntaxHighlighting(style)],
+	extensions: [
+		basicSetup,
+		jule,
+		syntaxHighlighting(style),
+		keymap.of([indentWithTab]),
+	],
 	parent: document.getElementById("editor"),
 });
 

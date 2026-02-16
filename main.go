@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -10,17 +12,50 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
 
-const maxConcurrentCompilations = 4
+const maxConcurrentCompilations = 2
 
 var semaphore = make(chan struct{}, maxConcurrentCompilations)
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func executeCommand(w http.ResponseWriter, tempDir string, command string, args ...string) (string, bool) {
-	cmd := exec.Command(command, args...)
+func compileAndRunCode(w http.ResponseWriter, tempDir string) (string, bool) {
+	// Useful to handle infinite loops
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	const programName = "program"
+	juleCommand := fmt.Sprintf("/jule/bin/julec build -o %s . && ./%s", programName, programName)
+	containerName := filepath.Base(tempDir)
+
+	cmd := exec.CommandContext(
+		ctx,
+		"docker", "run",
+		"--rm",
+		"--name", containerName,
+		"--network=none",
+		"--memory=512m",
+		"--cpus=1",
+		"--pids-limit=50", // to avoid fork bombs
+		"-u", "1000:1000", // to avoid root access
+		"--read-only",
+		"--tmpfs=/tmp:size=128m",
+		"--tmpfs=/root:size=16m",
+		"-v", tempDir+":/sandbox",
+		"--workdir=/sandbox",
+		"jule-clang",
+		"sh", "-c", juleCommand,
+	)
 	cmd.Dir = tempDir
 	output, err := cmd.CombinedOutput()
+
+	if ctx.Err() == context.DeadlineExceeded {
+		killCmd := exec.Command("docker", "kill", containerName)
+		_ = killCmd.Run()
+		http.Error(w, "Compilation and execution timed out after 30s. Check for infinite loops or blocking calls.", 500)
+		return "", false
+	}
 
 	// Jule error messages use ANSI color codes, so they must be filtered out for
 	// web display.
@@ -34,15 +69,14 @@ func executeCommand(w http.ResponseWriter, tempDir string, command string, args 
 		return outputMessage, true
 	}
 
-	if outputMessage != "" {
-		fmt.Println(outputMessage)
-		http.Error(w, outputMessage, 500)
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 139 {
+		http.Error(w, "Segmentation fault", 500)
 	} else {
-		fmt.Println("Error: ", err.Error())
-		http.Error(w, err.Error(), 500)
+		http.Error(w, outputMessage, 500)
 	}
 
-	return outputMessage, false
+	return "", false
 }
 
 func postHandler(w http.ResponseWriter, r *http.Request) {
@@ -61,28 +95,12 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(tempDir)
 
+	os.Chmod(tempDir, 0777)
 	codePath := filepath.Join(tempDir, "main.jule")
 	codeInput, _ := io.ReadAll(r.Body)
 	os.WriteFile(codePath, codeInput, 0644)
 
-	const programName = "program"
-	juleCommand := fmt.Sprintf("/jule/bin/julec build -o %s . && ./%s", programName, programName)
-
-	outputMessage, ok := executeCommand(
-		w, tempDir,
-		"docker", "run",
-		"--rm",
-		"--network=none",
-		"--memory=512m",
-		"--cpus=1",
-		"--pids-limit=50",
-		"--tmpfs=/tmp:size=128m",
-		"-v", tempDir+":/sandbox",
-		"--workdir=/sandbox",
-		"jule-clang",
-		"sh", "-c", juleCommand,
-	)
-	if ok {
+	if outputMessage, ok := compileAndRunCode(w, tempDir); ok {
 		fmt.Fprint(w, outputMessage)
 	}
 }

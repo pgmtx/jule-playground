@@ -8,6 +8,11 @@ import { basicSetup, EditorView } from "https://esm.sh/codemirror";
 import { keymap } from "https://esm.sh/@codemirror/view";
 import { indentWithTab } from "https://esm.sh/@codemirror/commands";
 
+const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+if (isMobile) {
+	document.getElementById("run-button").innerText = "Run";
+}
+
 const types = [
 	"bool",
 	"int",

@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const maxConcurrentCompilations = 4
+const maxConcurrentCompilations = 2
 
 var semaphore = make(chan struct{}, maxConcurrentCompilations)
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)

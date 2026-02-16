@@ -2,9 +2,11 @@ import {
 	HighlightStyle,
 	StreamLanguage,
 	syntaxHighlighting,
-} from "https://esm.sh/@codemirror/language@6.0.0";
-import { tags } from "https://esm.sh/@lezer/highlight@1.0.0";
-import { basicSetup, EditorView } from "https://esm.sh/codemirror@6.0.1";
+} from "https://esm.sh/@codemirror/language";
+import { tags } from "https://esm.sh/@lezer/highlight";
+import { basicSetup, EditorView } from "https://esm.sh/codemirror";
+import { keymap } from "https://esm.sh/@codemirror/view";
+import { indentWithTab } from "https://esm.sh/@codemirror/commands";
 
 const types = [
 	"bool",
@@ -132,7 +134,12 @@ const editor = new EditorView({
 	doc: `fn main() {
   println("Hello World!")
 }`,
-	extensions: [basicSetup, jule, syntaxHighlighting(style)],
+	extensions: [
+		basicSetup,
+		jule,
+		syntaxHighlighting(style),
+		keymap.of([indentWithTab]),
+	],
 	parent: document.getElementById("editor"),
 });
 

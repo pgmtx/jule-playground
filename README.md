@@ -1,12 +1,12 @@
 # Jule Playground
 
-> An online sandbox to quickly test Jule code.
+> An online sandbox to quickly test [Jule](https://jule.dev/) code.
 
 ## Setup
 
-You will need [Docker](https://www.docker.com/) and a [Go](https://go.dev) compiler.
+You will need [Docker](https://www.docker.com/) and a [Go](https://go.dev) compiler (version >= 1.25.5).
 
-Clang and julec are isolated inside the Dockerfile, which can be built that way:
+Clang and julec are isolated inside the Dockerfile, which can be built this way:
 
 ```
 docker build -t jule-clang .

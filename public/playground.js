@@ -144,6 +144,10 @@ const editor = new EditorView({
 		jule,
 		syntaxHighlighting(style),
 		keymap.of([indentWithTab]),
+		EditorView.theme({
+			"&": { maxHeight: "200px" },
+			".cm-scroller": { overflow: "auto" },
+		}),
 	],
 	parent: document.getElementById("editor"),
 });

@@ -20636,7 +20636,11 @@ var editor = new EditorView({
     basicSetup,
     jule,
     syntaxHighlighting(style),
-    keymap.of([indentWithTab])
+    keymap.of([indentWithTab]),
+    EditorView.theme({
+      "&": { maxHeight: "200px" },
+      ".cm-scroller": { overflow: "auto" }
+    })
   ],
   parent: document.getElementById("editor")
 });
@@ -20662,7 +20666,6 @@ runButton.onclick = () => {
     outputElement.textContent = output;
     isCompiling = false;
   }).catch((err) => {
-    console.log(err);
     outputElement.textContent = err;
     isCompiling = false;
   });

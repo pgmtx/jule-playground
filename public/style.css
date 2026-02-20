@@ -41,4 +41,6 @@ pre {
 
 #output {
 	font-family: "Monaspace Neon", Courier, monospace;
+	max-height: 300px;
+	overflow-y: auto;
 }

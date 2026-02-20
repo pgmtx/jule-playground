@@ -2,3 +2,4 @@ main
 main.jule
 .env
 playground
+node_modules/

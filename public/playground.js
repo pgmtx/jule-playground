@@ -1,12 +1,12 @@
-import { indentWithTab } from "https://esm.sh/@codemirror/commands";
+import { indentWithTab } from "@codemirror/commands";
 import {
 	HighlightStyle,
 	StreamLanguage,
 	syntaxHighlighting,
-} from "https://esm.sh/@codemirror/language";
-import { keymap } from "https://esm.sh/@codemirror/view";
-import { tags } from "https://esm.sh/@lezer/highlight";
-import { basicSetup, EditorView } from "https://esm.sh/codemirror";
+} from "@codemirror/language";
+import { keymap } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { basicSetup, EditorView } from "codemirror";
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 if (isMobile) {

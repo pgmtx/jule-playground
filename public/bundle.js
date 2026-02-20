@@ -20640,8 +20640,13 @@ var editor = new EditorView({
   ],
   parent: document.getElementById("editor")
 });
+var isCompiling = false;
 var runButton = document.getElementById("run-button");
 runButton.onclick = () => {
+  if (isCompiling) {
+    return;
+  }
+  isCompiling = true;
   const outputElement = document.getElementById("output");
   outputElement.textContent = "Compiling...";
   const inputCode = editor.state.doc.toString();
@@ -20655,8 +20660,11 @@ runButton.onclick = () => {
     const duration = (end - start) / 1000;
     console.log("Compilation took", duration, "s");
     outputElement.textContent = output;
+    isCompiling = false;
   }).catch((err) => {
-    outputElement.textContent = `Error: ${err}`;
+    console.log(err);
+    outputElement.textContent = err;
+    isCompiling = false;
   });
 };
 document.addEventListener("keydown", (e) => {

@@ -148,8 +148,15 @@ const editor = new EditorView({
 	parent: document.getElementById("editor"),
 });
 
+let isCompiling = false;
 const runButton = document.getElementById("run-button");
 runButton.onclick = () => {
+	if (isCompiling) {
+		return;
+	}
+
+	isCompiling = true;
+
 	const outputElement = document.getElementById("output");
 	outputElement.textContent = "Compiling...";
 
@@ -167,9 +174,11 @@ runButton.onclick = () => {
 			const duration = (end - start) / 1000;
 			console.log("Compilation took", duration, "s");
 			outputElement.textContent = output;
+			isCompiling = false;
 		})
 		.catch((err) => {
-			outputElement.textContent = `Error: ${err}`;
+			outputElement.textContent = err;
+			isCompiling = false;
 		});
 };
 

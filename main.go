@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -106,10 +107,13 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	port := flag.Int("port", 8080, "server port")
+	flag.Parse()
 	fs := http.FileServer(http.Dir("./public"))
 	http.Handle("/playground/", http.StripPrefix("/playground/", fs))
 
 	http.HandleFunc("/playground/compile", postHandler)
-	fmt.Println("http://0.0.0.0:8080/playground/")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	addr := fmt.Sprintf(":%d", *port)
+	fmt.Println("http://0.0.0.0" + addr + "/playground/")
+	log.Fatal(http.ListenAndServe(addr, nil))
 }

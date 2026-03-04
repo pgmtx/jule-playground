@@ -7,6 +7,7 @@ fi
 
 source .env
 CGO_ENABLED=0 go build -ldflags "-s -w" .
+upx --best ./playground
 ssh root@$SERVER_IP "systemctl stop playground"
 scp ./playground root@$SERVER_IP:/opt/playground/
 scp ./Dockerfile root@$SERVER_IP:/opt/playground/

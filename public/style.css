@@ -8,6 +8,10 @@
 	src: url("./static/MonaspaceNeon.woff");
 }
 
+:root {
+	--container-background-color: #282a36;
+}
+
 body {
 	font-family: "Inter", sans-serif;
 	background-color: white;
@@ -36,6 +40,11 @@ button {
 	border-radius: 4px;
 }
 
+body.dark-mode button {
+	background-color: #171921;
+	color: #ccc;
+}
+
 pre {
 	background-color: rgb(230, 230, 230);
 	padding: 1em;
@@ -45,7 +54,7 @@ pre {
 }
 
 body.dark-mode pre {
-	background-color: #19191e;
+	background-color: var(--container-background-color);
 }
 
 body.dark-mode select {
@@ -59,11 +68,15 @@ body.dark-mode select {
 }
 
 body.dark-mode .cm-editor {
-	background-color: #19191e;
+	background-color: var(--container-background-color);
 }
 
 body.dark-mode .cm-cursor {
 	border-left-color: white;
+}
+
+body.dark-mode .cm-activeLine {
+	background-color: #1a3a4a66;
 }
 
 #output {

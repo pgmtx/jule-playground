@@ -210,7 +210,7 @@ examples.onchange = (e) => {
 		case "fizzbuzz":
 			newCode = `fn main() {
   mut i := 1
-  for i <= 16, i++ {
+  for i <= 16; i++ {
     if i % 15 == 0 {
       println("FizzBuzz")
     } else if i % 3 == 0 {

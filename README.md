@@ -1,12 +1,14 @@
 # Jule Playground
 
-> An online sandbox to quickly test Jule code.
+> An online sandbox to quickly test [Jule](https://jule.dev/) code.
 
 ## Setup
 
-You will need [Docker](https://www.docker.com/) and a [Go](https://go.dev) compiler.
+You will need [Docker](https://www.docker.com/), a [Go](https://go.dev) compiler (version >= 1.25.5), and [Bun](https://bun.com/).
 
-Clang and julec are isolated inside the Dockerfile, which can be built that way:
+Install the JavaScript dependencies (including CodeMirror), using `bun install`.
+
+Clang and julec are isolated inside the Dockerfile, which can be built this way:
 
 ```
 docker build -t jule-clang .
@@ -15,6 +17,8 @@ docker build -t jule-clang .
 ### Locally
 
 Type `go run .` then open `0.0.0.0:8080/playground` in your browser.
+
+Each time you edit `public/playground.js`, you have to execute `bun run build` to generate the bundle script.
 
 ### On a server
 

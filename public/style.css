@@ -1,4 +1,12 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap");
+@font-face {
+	font-family: "Inter";
+	src: url("./static/Inter.ttf");
+}
+
+@font-face {
+	font-family: "Monaspace Neon";
+	src: url("./static/MonaspaceNeon.woff");
+}
 
 body {
 	font-family: "Inter", sans-serif;
@@ -24,4 +32,15 @@ pre {
 	border-radius: 5px;
 	margin: 0;
 	overflow-x: auto;
+}
+
+.cm-editor .cm-content {
+	font-family: "Monaspace Neon", Courier, monospace;
+	font-variant-ligatures: none;
+}
+
+#output {
+	font-family: "Monaspace Neon", Courier, monospace;
+	max-height: 300px;
+	overflow-y: auto;
 }

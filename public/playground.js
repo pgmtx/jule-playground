@@ -1,12 +1,12 @@
+import { indentWithTab } from "@codemirror/commands";
 import {
 	HighlightStyle,
 	StreamLanguage,
 	syntaxHighlighting,
-} from "https://esm.sh/@codemirror/language";
-import { tags } from "https://esm.sh/@lezer/highlight";
-import { basicSetup, EditorView } from "https://esm.sh/codemirror";
-import { keymap } from "https://esm.sh/@codemirror/view";
-import { indentWithTab } from "https://esm.sh/@codemirror/commands";
+} from "@codemirror/language";
+import { keymap } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { basicSetup, EditorView } from "codemirror";
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 if (isMobile) {
@@ -144,12 +144,23 @@ const editor = new EditorView({
 		jule,
 		syntaxHighlighting(style),
 		keymap.of([indentWithTab]),
+		EditorView.theme({
+			"&": { maxHeight: "200px" },
+			".cm-scroller": { overflow: "auto" },
+		}),
 	],
 	parent: document.getElementById("editor"),
 });
 
+let isCompiling = false;
 const runButton = document.getElementById("run-button");
 runButton.onclick = () => {
+	if (isCompiling) {
+		return;
+	}
+
+	isCompiling = true;
+
 	const outputElement = document.getElementById("output");
 	outputElement.textContent = "Compiling...";
 
@@ -167,9 +178,11 @@ runButton.onclick = () => {
 			const duration = (end - start) / 1000;
 			console.log("Compilation took", duration, "s");
 			outputElement.textContent = output;
+			isCompiling = false;
 		})
 		.catch((err) => {
-			outputElement.textContent = `Error: ${err}`;
+			outputElement.textContent = err;
+			isCompiling = false;
 		});
 };
 

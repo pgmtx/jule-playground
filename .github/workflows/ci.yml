@@ -17,9 +17,18 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25.5"
-      - name: Compiler server
+      - name: Compile the server
         run: go build .
+
+      - uses: oven-sh/setup-bun@v2
+      - name: Build the bundle
+        run: |
+          bun install
+          bun run build
 
       - uses: biomejs/setup-biome@v2
       - name: Lint and format checks for html, css and js files
-        run: biome check .
+        run: |
+          biome check public/index.html
+          biome check public/playground.js
+          biome check public/style.css

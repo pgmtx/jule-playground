@@ -18,6 +18,13 @@ jobs:
       - name: Compile the server
         run: CGO_ENABLED=0 go build -ldflags "-s -w" .
 
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
       - name: Deploy the code
         run: |
           ssh root@${{ secrets.SERVER_IP }} "systemctl stop playground"

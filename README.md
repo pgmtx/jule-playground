@@ -2,6 +2,11 @@
 
 > An online sandbox to quickly test [Jule](https://jule.dev/) code.
 
+## Limitations
+
+- The playground supports up to two concurrent compilations.
+- Code relying on stdin is not supported due to sandboxing constraints.
+
 ## Setup
 
 You will need [Docker](https://www.docker.com/), a [Go](https://go.dev) compiler (version >= 1.25.5), and [Bun](https://bun.com/).

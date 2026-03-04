@@ -1,0 +1,28 @@
+name: CD
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.5"
+      - name: Compile the server
+        run: CGO_ENABLED=0 go build -ldflags "-s -w" .
+
+      - name: Deploy the code
+        run: |
+          ssh root@${{ secrets.SERVER_IP }} "systemctl stop playground"
+          scp ./playground root@${{ secrets.SERVER_IP }}:/opt/playground/
+          scp ./Dockerfile root@${{ secrets.SERVER_IP }}:/opt/playground/
+          scp -r ./public root@${{ secrets.SERVER_IP }}:/opt/playground/
+          ssh root@${{ secrets.SERVER_IP }} "systemctl start playground"
+          echo "Code deployed successfully!"

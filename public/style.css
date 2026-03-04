@@ -10,28 +10,32 @@
 
 body {
 	font-family: "Inter", sans-serif;
+	height: 100vh;
+	margin-top: 0;
+	margin-bottom: 0;
+	display: flex;
+	flex-direction: column;
 }
 
-button {
-	display: inline-block;
-	padding: 0.2em 0.9em;
-	line-height: 1.5em;
-	margin: 0.2em;
-	text-decoration: none;
-	font-size: 0.8em;
-	cursor: pointer;
-	border: 0px;
-	height: 2em;
-	color: #333;
-	border-radius: 4px;
+#top {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
 }
 
-pre {
-	background-color: rgb(230, 230, 230);
-	padding: 1em;
-	border-radius: 5px;
-	margin: 0;
-	overflow-x: auto;
+select {
+	width: 11em;
+	margin-bottom: 8px;
+}
+
+#editor {
+	flex: 1;
+	min-height: 0;
+}
+
+.cm-editor {
+	height: 100%;
 }
 
 .cm-editor .cm-content {
@@ -39,8 +43,36 @@ pre {
 	font-variant-ligatures: none;
 }
 
-#output {
+button {
+	display: inline-block;
+	padding: 0.2em 0.9em;
+	line-height: 1.5em;
+	margin: 8px 8px 0.5em 0;
+	text-decoration: none;
+	font-size: 0.8em;
+	cursor: pointer;
+	border: 0px;
+	height: 2em;
+	color: #333;
+	border-radius: 4px;
+	width: 10em;
+}
+
+#output-wrapper {
+	height: 25vh;
+	display: flex;
+	flex-direction: column;
+	/*justify-content: flex-end; /* forces the div to be at the bottom of the page */
+}
+
+pre#output {
 	font-family: "Monaspace Neon", Courier, monospace;
-	max-height: 300px;
+	background-color: rgb(230, 230, 230);
+	flex: 1;
+	padding: 1em;
+	border-radius: 5px;
+	margin: 0;
+	overflow-x: auto;
 	overflow-y: auto;
+	min-height: 0;
 }

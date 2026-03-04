@@ -10,13 +10,17 @@
 
 body {
 	font-family: "Inter", sans-serif;
+	height: 100vh;
+	margin: 0 8px 0 8px; /* to avoid y-scrolling */
+	display: flex;
+	flex-direction: column;
 }
 
 button {
 	display: inline-block;
 	padding: 0.2em 0.9em;
 	line-height: 1.5em;
-	margin: 0.2em;
+	margin: 0 8px 0.5em 0;
 	text-decoration: none;
 	font-size: 0.8em;
 	cursor: pointer;
@@ -24,14 +28,7 @@ button {
 	height: 2em;
 	color: #333;
 	border-radius: 4px;
-}
-
-pre {
-	background-color: rgb(230, 230, 230);
-	padding: 1em;
-	border-radius: 5px;
-	margin: 0;
-	overflow-x: auto;
+	width: 10em;
 }
 
 .cm-editor .cm-content {
@@ -39,8 +36,21 @@ pre {
 	font-variant-ligatures: none;
 }
 
-#output {
+pre {
 	font-family: "Monaspace Neon", Courier, monospace;
-	max-height: 300px;
+	background-color: rgb(230, 230, 230);
+	padding: 1em;
+	border-radius: 5px;
+	margin: 0;
+	overflow-x: auto;
 	overflow-y: auto;
+	height: 25vh;
+}
+
+#output-wrapper {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end; /* forces the div to be at the bottom of the page */
+	min-height: 0;
 }

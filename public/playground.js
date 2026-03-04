@@ -136,7 +136,7 @@ const jule = StreamLanguage.define({
 });
 
 const helloWorldCode = `fn main() {
- println("Hello World!")
+  println("Hello World!")
 }`;
 
 const editor = new EditorView({
@@ -146,10 +146,6 @@ const editor = new EditorView({
 		jule,
 		syntaxHighlighting(style),
 		keymap.of([indentWithTab]),
-		EditorView.theme({
-			"&": { maxHeight: "200px" },
-			".cm-scroller": { overflow: "auto" },
-		}),
 	],
 	parent: document.getElementById("editor"),
 });

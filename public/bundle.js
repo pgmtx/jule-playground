@@ -20629,7 +20629,7 @@ var jule = StreamLanguage.define({
   }
 });
 var helloWorldCode = `fn main() {
- println("Hello World!")
+  println("Hello World!")
 }`;
 var editor = new EditorView({
   doc: helloWorldCode,
@@ -20637,11 +20637,7 @@ var editor = new EditorView({
     basicSetup,
     jule,
     syntaxHighlighting(style),
-    keymap.of([indentWithTab]),
-    EditorView.theme({
-      "&": { maxHeight: "200px" },
-      ".cm-scroller": { overflow: "auto" }
-    })
+    keymap.of([indentWithTab])
   ],
   parent: document.getElementById("editor")
 });

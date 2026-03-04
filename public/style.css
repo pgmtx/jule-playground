@@ -11,16 +11,43 @@
 body {
 	font-family: "Inter", sans-serif;
 	height: 100vh;
-	margin: 0 8px 0 8px; /* to avoid y-scrolling */
+	margin-top: 0;
+	margin-bottom: 0;
 	display: flex;
 	flex-direction: column;
+}
+
+#top {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+select {
+	width: 11em;
+	margin-bottom: 8px;
+}
+
+#editor {
+	flex: 1;
+	min-height: 0;
+}
+
+.cm-editor {
+	height: 100%;
+}
+
+.cm-editor .cm-content {
+	font-family: "Monaspace Neon", Courier, monospace;
+	font-variant-ligatures: none;
 }
 
 button {
 	display: inline-block;
 	padding: 0.2em 0.9em;
 	line-height: 1.5em;
-	margin: 0 8px 0.5em 0;
+	margin: 8px 8px 0.5em 0;
 	text-decoration: none;
 	font-size: 0.8em;
 	cursor: pointer;
@@ -31,26 +58,21 @@ button {
 	width: 10em;
 }
 
-.cm-editor .cm-content {
-	font-family: "Monaspace Neon", Courier, monospace;
-	font-variant-ligatures: none;
+#output-wrapper {
+	height: 25vh;
+	display: flex;
+	flex-direction: column;
+	/*justify-content: flex-end; /* forces the div to be at the bottom of the page */
 }
 
-pre {
+pre#output {
 	font-family: "Monaspace Neon", Courier, monospace;
 	background-color: rgb(230, 230, 230);
+	flex: 1;
 	padding: 1em;
 	border-radius: 5px;
 	margin: 0;
 	overflow-x: auto;
 	overflow-y: auto;
-	height: 25vh;
-}
-
-#output-wrapper {
-	flex: 1;
-	display: flex;
-	flex-direction: column;
-	justify-content: flex-end; /* forces the div to be at the bottom of the page */
 	min-height: 0;
 }

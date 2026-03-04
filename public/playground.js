@@ -135,10 +135,12 @@ const jule = StreamLanguage.define({
 	},
 });
 
+const helloWorldCode = `fn main() {
+ println("Hello World!")
+}`;
+
 const editor = new EditorView({
-	doc: `fn main() {
-  println("Hello World!")
-}`,
+	doc: helloWorldCode,
 	extensions: [
 		basicSetup,
 		jule,
@@ -198,3 +200,84 @@ document.addEventListener(
 	},
 	{ capture: true },
 );
+
+const examples = document.getElementById("examples");
+examples.onchange = (e) => {
+	const value = e.target.value;
+
+	let newCode = helloWorldCode;
+	switch (value) {
+		case "fizzbuzz":
+			newCode = `fn main() {
+  mut i := 1
+  for i <= 16, i++ {
+    if i % 15 == 0 {
+      println("FizzBuzz")
+    } else if i % 3 == 0 {
+      println("Fizz")
+    } else if i % 5 == 0 {
+      println("Buzz")
+    }
+  }
+}`;
+			break;
+		case "randomness":
+			newCode = `use "std/fmt"
+use "std/math/rand"
+use "std/time"
+
+fn main() {
+  // Constants are compile-time known values
+  const min = 1
+  const max = 10
+
+  random_number := rand::IntN(max - min) + min
+
+  // print[ln] doesn't accept multiple arguments, so you have to use fmt::Print
+  fmt::Print("Here is a number between ", min, " and ", max, ": ")
+  println(random_number)
+}`;
+			break;
+		case "comptime-matching":
+			newCode = `fn printKind[T](value: T) {
+  const match type T {
+  | *int:
+    println("int pointer")
+  | &int:
+    println("int reference")
+  | u32:
+    println("u32")
+  | i32:
+    println("i32")
+  | u8:
+    println("u8")
+  | cmplx128:
+    println("cmplx128")
+  | cmplx64:
+    println("cmplx64")
+  | []int:
+    println("slice of ints")
+  | [5]int:
+    println("array of 5 ints")
+  |:
+    panic("unexpected type")
+  }
+}
+
+fn main() {
+  let x: [5]int = [1, 2, 3, 4, 5]
+  printKind(x)
+  printKind(3+4i)
+  slice := [2, 3, 4]
+  printKind(slice)
+}`;
+			break;
+	}
+	editor.dispatch({
+		changes: {
+			from: 0,
+			to: editor.state.doc.length,
+			insert: newCode,
+		},
+	});
+};

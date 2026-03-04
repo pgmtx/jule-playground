@@ -10,6 +10,16 @@
 
 body {
 	font-family: "Inter", sans-serif;
+	background-color: white;
+}
+
+body.dark-mode {
+	background-color: #161618;
+	color: white;
+}
+
+a {
+	color: #3464c1;
 }
 
 button {
@@ -34,9 +44,26 @@ pre {
 	overflow-x: auto;
 }
 
+body.dark-mode pre {
+	background-color: #19191e;
+}
+
+body.dark-mode select {
+	background-color: #19191e;
+	color: white;
+}
+
 .cm-editor .cm-content {
 	font-family: "Monaspace Neon", Courier, monospace;
 	font-variant-ligatures: none;
+}
+
+body.dark-mode .cm-editor {
+	background-color: #19191e;
+}
+
+body.dark-mode .cm-cursor {
+	border-left-color: white;
 }
 
 #output {

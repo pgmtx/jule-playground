@@ -281,3 +281,9 @@ fn main() {
 		},
 	});
 };
+
+const themeButton = document.getElementById("theme-button");
+themeButton.onclick = () => {
+	const element = document.body;
+	element.classList.toggle("dark-mode");
+};

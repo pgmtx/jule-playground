@@ -206,7 +206,31 @@ formatButton.onclick = () => {
 		return;
 	}
 	isFormatting = true;
-	console.log("Formatting the code");
+	const outputElement = document.getElementById("output");
+	const inputCode = editor.state.doc.toString();
+
+	fetch("/playground/format", {
+		method: "POST",
+		body: inputCode,
+		headers: { "Content-Type": "text/plain" },
+	})
+		.then((res) => res.text())
+		.then((formattedCode) => {
+			editor.dispatch({
+				changes: {
+					from: 0,
+					to: editor.state.doc.length,
+					insert: formattedCode,
+				},
+			});
+			outputElement.textContent = "Code formatted successfully.";
+			isFormatting = false;
+		})
+		.catch((err) => {
+			outputElement.textContent = err;
+			isFormatting = false;
+		});
+
 	isFormatting = false;
 };
 

@@ -80,7 +80,7 @@ func compileAndRunCode(w http.ResponseWriter, tempDir string) (string, bool) {
 	return "", false
 }
 
-func postHandler(w http.ResponseWriter, r *http.Request) {
+func compileHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -98,12 +98,25 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 
 	os.Chmod(tempDir, 0777)
 	codePath := filepath.Join(tempDir, "main.jule")
-	codeInput, _ := io.ReadAll(r.Body)
-	os.WriteFile(codePath, codeInput, 0644)
+	inputCode, _ := io.ReadAll(r.Body)
+	os.WriteFile(codePath, inputCode, 0644)
 
 	if outputMessage, ok := compileAndRunCode(w, tempDir); ok {
 		fmt.Fprint(w, outputMessage)
 	}
+}
+
+func formatHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	inputCode, _ := io.ReadAll(r.Body)
+	cmd := exec.Command("julefmt")
+	cmd.Stdin = strings.NewReader(string(inputCode))
+	outputCode, _ := cmd.CombinedOutput()
+	fmt.Fprint(w, string(outputCode))
 }
 
 func main() {
@@ -112,7 +125,8 @@ func main() {
 	fs := http.FileServer(http.Dir("./public"))
 	http.Handle("/playground/", http.StripPrefix("/playground/", fs))
 
-	http.HandleFunc("/playground/compile", postHandler)
+	http.HandleFunc("/playground/compile", compileHandler)
+	http.HandleFunc("/playground/format", formatHandler)
 	addr := fmt.Sprintf(":%d", *port)
 	fmt.Println("http://0.0.0.0" + addr + "/playground/")
 	log.Fatal(http.ListenAndServe(addr, nil))

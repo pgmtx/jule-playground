@@ -20640,7 +20640,8 @@ var editor = new EditorView({
     basicSetup,
     jule,
     syntaxHighlighting(style),
-    keymap.of([indentWithTab])
+    keymap.of([indentWithTab]),
+    indentUnit.of("\t")
   ],
   parent: document.getElementById("editor")
 });

@@ -1,4 +1,5 @@
 import { indentWithTab } from "@codemirror/commands";
+import { indentUnit } from "@codemirror/language";
 import {
 	HighlightStyle,
 	StreamLanguage,
@@ -148,7 +149,8 @@ const editor = new EditorView({
 		basicSetup,
 		jule,
 		syntaxHighlighting(style),
-		keymap.of([indentWithTab]),
+		keymap.of([indentWithTab]), // Handles the tab key
+		indentUnit.of("\t"), // To add because by default indentations add spaces
 	],
 	parent: document.getElementById("editor"),
 });

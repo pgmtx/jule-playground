@@ -20647,8 +20647,9 @@ var editor = new EditorView({
 });
 var isCompiling = false;
 var isFormatting = false;
+var isTranspiling = false;
 runButton.onclick = () => {
-  if (isCompiling || isFormatting) {
+  if (isCompiling || isFormatting || isTranspiling) {
     return;
   }
   isCompiling = true;
@@ -20682,7 +20683,7 @@ function assignShortcutToButton(buttonId, shortcutEvent) {
 }
 assignShortcutToButton("run-button", (e) => e.ctrlKey && e.key === "Enter");
 formatButton.onclick = () => {
-  if (isFormatting || isCompiling) {
+  if (isFormatting || isCompiling || isTranspiling) {
     return;
   }
   isFormatting = true;
@@ -20712,9 +20713,33 @@ formatButton.onclick = () => {
     outputElement.textContent = err;
     isFormatting = false;
   });
-  isFormatting = false;
 };
 assignShortcutToButton("format-button", (e) => e.shiftKey && e.key === "Enter");
+document.getElementById("transpile-button").onclick = () => {
+  if (isTranspiling || isCompiling || isFormatting) {
+    return;
+  }
+  isTranspiling = true;
+  const outputElement = document.getElementById("output");
+  const inputCode = editor.state.doc.toString();
+  fetch("/playground/transpile", {
+    method: "POST",
+    body: inputCode,
+    headers: { "Content-Type": "text/plain" }
+  }).then(async (res) => {
+    if (res.status >= 500) {
+      const message = await res.text();
+      throw message;
+    }
+    return res.text();
+  }).then((formattedCode) => {
+    outputElement.textContent = formattedCode;
+    isFormatting = false;
+  }).catch((err) => {
+    outputElement.textContent = err;
+    isFormatting = false;
+  });
+};
 var examples = document.getElementById("examples");
 examples.onchange = (e) => {
   const value = e.target.value;

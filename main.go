@@ -55,7 +55,7 @@ func compileAndRunCode(w http.ResponseWriter, tempDir string) (string, bool) {
 	if ctx.Err() == context.DeadlineExceeded {
 		killCmd := exec.Command("docker", "kill", containerName)
 		_ = killCmd.Run()
-		http.Error(w, "Compilation and execution timed out after 30s. Check for infinite loops or blocking calls.", 500)
+		http.Error(w, "Compilation and execution timed out after 30s. Check for infinite loops or blocking calls.", http.StatusInternalServerError)
 		return "", false
 	}
 
@@ -73,9 +73,9 @@ func compileAndRunCode(w http.ResponseWriter, tempDir string) (string, bool) {
 
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 139 {
-		http.Error(w, "Segmentation fault", 500)
+		http.Error(w, "Segmentation fault", http.StatusInternalServerError)
 	} else {
-		http.Error(w, outputMessage, 500)
+		http.Error(w, outputMessage, http.StatusInternalServerError)
 	}
 
 	return "", false
@@ -92,15 +92,19 @@ func compileHandler(w http.ResponseWriter, r *http.Request) {
 
 	tempDir, err := os.MkdirTemp("", "jule-playground-")
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer os.RemoveAll(tempDir)
 
-	os.Chmod(tempDir, 0777)
+	os.Chmod(tempDir, 0o777)
 	codePath := filepath.Join(tempDir, "main.jule")
-	inputCode, _ := io.ReadAll(r.Body)
-	os.WriteFile(codePath, inputCode, 0644)
+	inputCode, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	os.WriteFile(codePath, inputCode, 0o644)
 
 	if outputMessage, ok := compileAndRunCode(w, tempDir); ok {
 		fmt.Fprint(w, outputMessage)
@@ -113,7 +117,11 @@ func formatHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inputCode, _ := io.ReadAll(r.Body)
+	inputCode, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	// When an error occurs, julefmt writes to stderr but still returns 0 as an exit code.
 	// Therefore you have to check directly stderr and stdout content.
@@ -123,16 +131,51 @@ func formatHandler(w http.ResponseWriter, r *http.Request) {
 	cmd.Stdin = strings.NewReader(string(inputCode))
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err = cmd.Run()
 
 	if err != nil {
 		errorMessage := fmt.Sprintf("Exit error: %v\n", err)
-		http.Error(w, errorMessage, 500)
+		http.Error(w, errorMessage, http.StatusInternalServerError)
 	} else if stderr.Len() != 0 {
-		http.Error(w, stderr.String(), 500)
+		http.Error(w, stderr.String(), http.StatusInternalServerError)
 	} else if stdout.Len() != 0 {
 		fmt.Fprint(w, stdout.String())
 	}
+}
+
+func transpileHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	tempDir, err := os.MkdirTemp("", "jule-playground-")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	os.Chmod(tempDir, 0o777)
+	codePath := filepath.Join(tempDir, "main.jule")
+	inputCode, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	os.WriteFile(codePath, inputCode, 0o644)
+
+	cmd := exec.Command("julec", "build", "--transpile", ".")
+	cmd.Dir = tempDir
+	cmd.Run()
+	irPath := filepath.Join(tempDir, "dist", "ir.cpp")
+	irCode, err := os.ReadFile(irPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprint(w, string(irCode))
 }
 
 func main() {
@@ -143,6 +186,7 @@ func main() {
 
 	http.HandleFunc("/playground/compile", compileHandler)
 	http.HandleFunc("/playground/format", formatHandler)
+	http.HandleFunc("/playground/transpile", transpileHandler)
 	addr := fmt.Sprintf(":%d", *port)
 	fmt.Println("http://0.0.0.0" + addr + "/playground/")
 	log.Fatal(http.ListenAndServe(addr, nil))

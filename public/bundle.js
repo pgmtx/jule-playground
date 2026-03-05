@@ -20671,12 +20671,16 @@ runButton.onclick = () => {
     isCompiling = false;
   });
 };
-document.addEventListener("keydown", (e) => {
-  if (e.ctrlKey && e.key === "Enter") {
-    e.preventDefault();
-    runButton.click();
-  }
-}, { capture: true });
+function assignShortcutToButton(buttonId, shortcutEvent) {
+  const button = document.getElementById(buttonId);
+  document.addEventListener("keydown", (e) => {
+    if (shortcutEvent(e)) {
+      e.preventDefault();
+      button.click();
+    }
+  }, { capture: true });
+}
+assignShortcutToButton("run-button", (e) => e.ctrlKey && e.key === "Enter");
 formatButton.onclick = () => {
   if (isFormatting || isCompiling) {
     return;
@@ -20710,12 +20714,7 @@ formatButton.onclick = () => {
   });
   isFormatting = false;
 };
-document.addEventListener("keydown", (e) => {
-  if (e.shiftKey && e.key === "Enter") {
-    e.preventDefault();
-    formatButton.click();
-  }
-}, { capture: true });
+assignShortcutToButton("format-button", (e) => e.shiftKey && e.key === "Enter");
 var examples = document.getElementById("examples");
 examples.onchange = (e) => {
   const value = e.target.value;

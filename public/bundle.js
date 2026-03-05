@@ -20695,7 +20695,6 @@ examples.onchange = (e) => {
     case "randomness":
       newCode = `use "std/fmt"
 use "std/math/rand"
-use "std/time"
 
 fn main() {
   // Constants are compile-time known values

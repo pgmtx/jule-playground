@@ -1,7 +1,7 @@
 import { indentWithTab } from "@codemirror/commands";
-import { indentUnit } from "@codemirror/language";
 import {
 	HighlightStyle,
+	indentUnit,
 	StreamLanguage,
 	syntaxHighlighting,
 } from "@codemirror/language";

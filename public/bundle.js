@@ -20509,8 +20509,11 @@ var basicSetup = /* @__PURE__ */ (() => [
 
 // public/playground.js
 var isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+var runButton = document.getElementById("run-button");
+var formatButton = document.getElementById("format-button");
 if (isMobile) {
-  document.getElementById("run-button").innerText = "Run";
+  runButton.innerText = "Run";
+  formatButton.innerText = "Format";
 }
 var types2 = [
   "bool",
@@ -20642,9 +20645,9 @@ var editor = new EditorView({
   parent: document.getElementById("editor")
 });
 var isCompiling = false;
-var runButton = document.getElementById("run-button");
+var isFormatting = false;
 runButton.onclick = () => {
-  if (isCompiling) {
+  if (isCompiling || isFormatting) {
     return;
   }
   isCompiling = true;
@@ -20671,6 +20674,20 @@ document.addEventListener("keydown", (e) => {
   if (e.ctrlKey && e.key === "Enter") {
     e.preventDefault();
     runButton.click();
+  }
+}, { capture: true });
+formatButton.onclick = () => {
+  if (isFormatting || isCompiling) {
+    return;
+  }
+  isFormatting = true;
+  console.log("Formatting the code");
+  isFormatting = false;
+};
+document.addEventListener("keydown", (e) => {
+  if (e.shiftKey && e.key === "Enter") {
+    e.preventDefault();
+    formatButton.click();
   }
 }, { capture: true });
 var examples = document.getElementById("examples");

@@ -9,8 +9,11 @@ import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const runButton = document.getElementById("run-button");
+const formatButton = document.getElementById("format-button");
 if (isMobile) {
-	document.getElementById("run-button").innerText = "Run";
+	runButton.innerText = "Run";
+	formatButton.innerText = "Format";
 }
 
 const types = [
@@ -151,9 +154,10 @@ const editor = new EditorView({
 });
 
 let isCompiling = false;
-const runButton = document.getElementById("run-button");
+let isFormatting = false;
+
 runButton.onclick = () => {
-	if (isCompiling) {
+	if (isCompiling || isFormatting) {
 		return;
 	}
 
@@ -192,6 +196,26 @@ document.addEventListener(
 			// inside the code editor.
 			e.preventDefault();
 			runButton.click();
+		}
+	},
+	{ capture: true },
+);
+
+formatButton.onclick = () => {
+	if (isFormatting || isCompiling) {
+		return;
+	}
+	isFormatting = true;
+	console.log("Formatting the code");
+	isFormatting = false;
+};
+
+document.addEventListener(
+	"keydown",
+	(e) => {
+		if (e.shiftKey && e.key === "Enter") {
+			e.preventDefault();
+			formatButton.click();
 		}
 	},
 	{ capture: true },

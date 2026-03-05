@@ -17384,3179 +17384,16 @@ var defaultKeymap = /* @__PURE__ */ [
   { key: "Ctrl-m", mac: "Shift-Alt-m", run: toggleTabFocusMode }
 ].concat(standardKeymap);
 var indentWithTab = { key: "Tab", run: indentMore, shift: indentLess };
-// node_modules/@codemirror/search/dist/index.js
-var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
-
-class SearchCursor {
-  constructor(text, query, from = 0, to = text.length, normalize, test) {
-    this.test = test;
-    this.value = { from: 0, to: 0 };
-    this.done = false;
-    this.matches = [];
-    this.buffer = "";
-    this.bufferPos = 0;
-    this.iter = text.iterRange(from, to);
-    this.bufferStart = from;
-    this.normalize = normalize ? (x) => normalize(basicNormalize(x)) : basicNormalize;
-    this.query = this.normalize(query);
-  }
-  peek() {
-    if (this.bufferPos == this.buffer.length) {
-      this.bufferStart += this.buffer.length;
-      this.iter.next();
-      if (this.iter.done)
-        return -1;
-      this.bufferPos = 0;
-      this.buffer = this.iter.value;
-    }
-    return codePointAt2(this.buffer, this.bufferPos);
-  }
-  next() {
-    while (this.matches.length)
-      this.matches.pop();
-    return this.nextOverlapping();
-  }
-  nextOverlapping() {
-    for (;; ) {
-      let next = this.peek();
-      if (next < 0) {
-        this.done = true;
-        return this;
-      }
-      let str = fromCodePoint(next), start = this.bufferStart + this.bufferPos;
-      this.bufferPos += codePointSize2(next);
-      let norm = this.normalize(str);
-      if (norm.length)
-        for (let i2 = 0, pos = start;; i2++) {
-          let code2 = norm.charCodeAt(i2);
-          let match = this.match(code2, pos, this.bufferPos + this.bufferStart);
-          if (i2 == norm.length - 1) {
-            if (match) {
-              this.value = match;
-              return this;
-            }
-            break;
-          }
-          if (pos == start && i2 < str.length && str.charCodeAt(i2) == code2)
-            pos++;
-        }
-    }
-  }
-  match(code2, pos, end) {
-    let match = null;
-    for (let i2 = 0;i2 < this.matches.length; i2 += 2) {
-      let index = this.matches[i2], keep = false;
-      if (this.query.charCodeAt(index) == code2) {
-        if (index == this.query.length - 1) {
-          match = { from: this.matches[i2 + 1], to: end };
-        } else {
-          this.matches[i2]++;
-          keep = true;
-        }
-      }
-      if (!keep) {
-        this.matches.splice(i2, 2);
-        i2 -= 2;
-      }
-    }
-    if (this.query.charCodeAt(0) == code2) {
-      if (this.query.length == 1)
-        match = { from: pos, to: end };
-      else
-        this.matches.push(1, pos);
-    }
-    if (match && this.test && !this.test(match.from, match.to, this.buffer, this.bufferStart))
-      match = null;
-    return match;
-  }
-}
-if (typeof Symbol != "undefined")
-  SearchCursor.prototype[Symbol.iterator] = function() {
-    return this;
-  };
-var empty = { from: -1, to: -1, match: /* @__PURE__ */ /.*/.exec("") };
-var baseFlags = "gm" + (/x/.unicode == null ? "" : "u");
-
-class RegExpCursor {
-  constructor(text, query, options, from = 0, to = text.length) {
-    this.text = text;
-    this.to = to;
-    this.curLine = "";
-    this.done = false;
-    this.value = empty;
-    if (/\\[sWDnr]|\n|\r|\[\^/.test(query))
-      return new MultilineRegExpCursor(text, query, options, from, to);
-    this.re = new RegExp(query, baseFlags + ((options === null || options === undefined ? undefined : options.ignoreCase) ? "i" : ""));
-    this.test = options === null || options === undefined ? undefined : options.test;
-    this.iter = text.iter();
-    let startLine = text.lineAt(from);
-    this.curLineStart = startLine.from;
-    this.matchPos = toCharEnd(text, from);
-    this.getLine(this.curLineStart);
-  }
-  getLine(skip) {
-    this.iter.next(skip);
-    if (this.iter.lineBreak) {
-      this.curLine = "";
-    } else {
-      this.curLine = this.iter.value;
-      if (this.curLineStart + this.curLine.length > this.to)
-        this.curLine = this.curLine.slice(0, this.to - this.curLineStart);
-      this.iter.next();
-    }
-  }
-  nextLine() {
-    this.curLineStart = this.curLineStart + this.curLine.length + 1;
-    if (this.curLineStart > this.to)
-      this.curLine = "";
-    else
-      this.getLine(0);
-  }
-  next() {
-    for (let off = this.matchPos - this.curLineStart;; ) {
-      this.re.lastIndex = off;
-      let match = this.matchPos <= this.to && this.re.exec(this.curLine);
-      if (match) {
-        let from = this.curLineStart + match.index, to = from + match[0].length;
-        this.matchPos = toCharEnd(this.text, to + (from == to ? 1 : 0));
-        if (from == this.curLineStart + this.curLine.length)
-          this.nextLine();
-        if ((from < to || from > this.value.to) && (!this.test || this.test(from, to, match))) {
-          this.value = { from, to, match };
-          return this;
-        }
-        off = this.matchPos - this.curLineStart;
-      } else if (this.curLineStart + this.curLine.length < this.to) {
-        this.nextLine();
-        off = 0;
-      } else {
-        this.done = true;
-        return this;
-      }
-    }
-  }
-}
-var flattened = /* @__PURE__ */ new WeakMap;
-
-class FlattenedDoc {
-  constructor(from, text) {
-    this.from = from;
-    this.text = text;
-  }
-  get to() {
-    return this.from + this.text.length;
-  }
-  static get(doc2, from, to) {
-    let cached = flattened.get(doc2);
-    if (!cached || cached.from >= to || cached.to <= from) {
-      let flat = new FlattenedDoc(from, doc2.sliceString(from, to));
-      flattened.set(doc2, flat);
-      return flat;
-    }
-    if (cached.from == from && cached.to == to)
-      return cached;
-    let { text, from: cachedFrom } = cached;
-    if (cachedFrom > from) {
-      text = doc2.sliceString(from, cachedFrom) + text;
-      cachedFrom = from;
-    }
-    if (cached.to < to)
-      text += doc2.sliceString(cached.to, to);
-    flattened.set(doc2, new FlattenedDoc(cachedFrom, text));
-    return new FlattenedDoc(from, text.slice(from - cachedFrom, to - cachedFrom));
-  }
-}
-
-class MultilineRegExpCursor {
-  constructor(text, query, options, from, to) {
-    this.text = text;
-    this.to = to;
-    this.done = false;
-    this.value = empty;
-    this.matchPos = toCharEnd(text, from);
-    this.re = new RegExp(query, baseFlags + ((options === null || options === undefined ? undefined : options.ignoreCase) ? "i" : ""));
-    this.test = options === null || options === undefined ? undefined : options.test;
-    this.flat = FlattenedDoc.get(text, from, this.chunkEnd(from + 5000));
-  }
-  chunkEnd(pos) {
-    return pos >= this.to ? this.to : this.text.lineAt(pos).to;
-  }
-  next() {
-    for (;; ) {
-      let off = this.re.lastIndex = this.matchPos - this.flat.from;
-      let match = this.re.exec(this.flat.text);
-      if (match && !match[0] && match.index == off) {
-        this.re.lastIndex = off + 1;
-        match = this.re.exec(this.flat.text);
-      }
-      if (match) {
-        let from = this.flat.from + match.index, to = from + match[0].length;
-        if ((this.flat.to >= this.to || match.index + match[0].length <= this.flat.text.length - 10) && (!this.test || this.test(from, to, match))) {
-          this.value = { from, to, match };
-          this.matchPos = toCharEnd(this.text, to + (from == to ? 1 : 0));
-          return this;
-        }
-      }
-      if (this.flat.to == this.to) {
-        this.done = true;
-        return this;
-      }
-      this.flat = FlattenedDoc.get(this.text, this.flat.from, this.chunkEnd(this.flat.from + this.flat.text.length * 2));
-    }
-  }
-}
-if (typeof Symbol != "undefined") {
-  RegExpCursor.prototype[Symbol.iterator] = MultilineRegExpCursor.prototype[Symbol.iterator] = function() {
-    return this;
-  };
-}
-function validRegExp(source) {
-  try {
-    new RegExp(source, baseFlags);
-    return true;
-  } catch (_a2) {
-    return false;
-  }
-}
-function toCharEnd(text, pos) {
-  if (pos >= text.length)
-    return pos;
-  let line = text.lineAt(pos), next;
-  while (pos < line.to && (next = line.text.charCodeAt(pos - line.from)) >= 56320 && next < 57344)
-    pos++;
-  return pos;
-}
-var gotoLine = (view) => {
-  let { state } = view;
-  let line = String(state.doc.lineAt(view.state.selection.main.head).number);
-  let { close, result } = showDialog(view, {
-    label: state.phrase("Go to line"),
-    input: { type: "text", name: "line", value: line },
-    focus: true,
-    submitLabel: state.phrase("go")
-  });
-  result.then((form) => {
-    let match = form && /^([+-])?(\d+)?(:\d+)?(%)?$/.exec(form.elements["line"].value);
-    if (!match) {
-      view.dispatch({ effects: close });
-      return;
-    }
-    let startLine = state.doc.lineAt(state.selection.main.head);
-    let [, sign, ln, cl, percent] = match;
-    let col = cl ? +cl.slice(1) : 0;
-    let line2 = ln ? +ln : startLine.number;
-    if (ln && percent) {
-      let pc = line2 / 100;
-      if (sign)
-        pc = pc * (sign == "-" ? -1 : 1) + startLine.number / state.doc.lines;
-      line2 = Math.round(state.doc.lines * pc);
-    } else if (ln && sign) {
-      line2 = line2 * (sign == "-" ? -1 : 1) + startLine.number;
-    }
-    let docLine = state.doc.line(Math.max(1, Math.min(state.doc.lines, line2)));
-    let selection = EditorSelection.cursor(docLine.from + Math.max(0, Math.min(col, docLine.length)));
-    view.dispatch({
-      effects: [close, EditorView.scrollIntoView(selection.from, { y: "center" })],
-      selection
-    });
-  });
-  return true;
-};
-var defaultHighlightOptions = {
-  highlightWordAroundCursor: false,
-  minSelectionLength: 1,
-  maxMatches: 100,
-  wholeWords: false
-};
-var highlightConfig = /* @__PURE__ */ Facet.define({
-  combine(options) {
-    return combineConfig(options, defaultHighlightOptions, {
-      highlightWordAroundCursor: (a, b) => a || b,
-      minSelectionLength: Math.min,
-      maxMatches: Math.min
-    });
-  }
-});
-function highlightSelectionMatches(options) {
-  let ext = [defaultTheme, matchHighlighter];
-  if (options)
-    ext.push(highlightConfig.of(options));
-  return ext;
-}
-var matchDeco = /* @__PURE__ */ Decoration.mark({ class: "cm-selectionMatch" });
-var mainMatchDeco = /* @__PURE__ */ Decoration.mark({ class: "cm-selectionMatch cm-selectionMatch-main" });
-function insideWordBoundaries(check, state, from, to) {
-  return (from == 0 || check(state.sliceDoc(from - 1, from)) != CharCategory.Word) && (to == state.doc.length || check(state.sliceDoc(to, to + 1)) != CharCategory.Word);
-}
-function insideWord(check, state, from, to) {
-  return check(state.sliceDoc(from, from + 1)) == CharCategory.Word && check(state.sliceDoc(to - 1, to)) == CharCategory.Word;
-}
-var matchHighlighter = /* @__PURE__ */ ViewPlugin.fromClass(class {
-  constructor(view) {
-    this.decorations = this.getDeco(view);
-  }
-  update(update) {
-    if (update.selectionSet || update.docChanged || update.viewportChanged)
-      this.decorations = this.getDeco(update.view);
-  }
-  getDeco(view) {
-    let conf = view.state.facet(highlightConfig);
-    let { state } = view, sel = state.selection;
-    if (sel.ranges.length > 1)
-      return Decoration.none;
-    let range = sel.main, query, check = null;
-    if (range.empty) {
-      if (!conf.highlightWordAroundCursor)
-        return Decoration.none;
-      let word = state.wordAt(range.head);
-      if (!word)
-        return Decoration.none;
-      check = state.charCategorizer(range.head);
-      query = state.sliceDoc(word.from, word.to);
-    } else {
-      let len = range.to - range.from;
-      if (len < conf.minSelectionLength || len > 200)
-        return Decoration.none;
-      if (conf.wholeWords) {
-        query = state.sliceDoc(range.from, range.to);
-        check = state.charCategorizer(range.head);
-        if (!(insideWordBoundaries(check, state, range.from, range.to) && insideWord(check, state, range.from, range.to)))
-          return Decoration.none;
-      } else {
-        query = state.sliceDoc(range.from, range.to);
-        if (!query)
-          return Decoration.none;
-      }
-    }
-    let deco = [];
-    for (let part of view.visibleRanges) {
-      let cursor = new SearchCursor(state.doc, query, part.from, part.to);
-      while (!cursor.next().done) {
-        let { from, to } = cursor.value;
-        if (!check || insideWordBoundaries(check, state, from, to)) {
-          if (range.empty && from <= range.from && to >= range.to)
-            deco.push(mainMatchDeco.range(from, to));
-          else if (from >= range.to || to <= range.from)
-            deco.push(matchDeco.range(from, to));
-          if (deco.length > conf.maxMatches)
-            return Decoration.none;
-        }
-      }
-    }
-    return Decoration.set(deco);
-  }
-}, {
-  decorations: (v) => v.decorations
-});
-var defaultTheme = /* @__PURE__ */ EditorView.baseTheme({
-  ".cm-selectionMatch": { backgroundColor: "#99ff7780" },
-  ".cm-searchMatch .cm-selectionMatch": { backgroundColor: "transparent" }
-});
-var selectWord = ({ state, dispatch }) => {
-  let { selection } = state;
-  let newSel = EditorSelection.create(selection.ranges.map((range) => state.wordAt(range.head) || EditorSelection.cursor(range.head)), selection.mainIndex);
-  if (newSel.eq(selection))
-    return false;
-  dispatch(state.update({ selection: newSel }));
-  return true;
-};
-function findNextOccurrence(state, query) {
-  let { main, ranges } = state.selection;
-  let word = state.wordAt(main.head), fullWord = word && word.from == main.from && word.to == main.to;
-  for (let cycled = false, cursor = new SearchCursor(state.doc, query, ranges[ranges.length - 1].to);; ) {
-    cursor.next();
-    if (cursor.done) {
-      if (cycled)
-        return null;
-      cursor = new SearchCursor(state.doc, query, 0, Math.max(0, ranges[ranges.length - 1].from - 1));
-      cycled = true;
-    } else {
-      if (cycled && ranges.some((r) => r.from == cursor.value.from))
-        continue;
-      if (fullWord) {
-        let word2 = state.wordAt(cursor.value.from);
-        if (!word2 || word2.from != cursor.value.from || word2.to != cursor.value.to)
-          continue;
-      }
-      return cursor.value;
-    }
-  }
-}
-var selectNextOccurrence = ({ state, dispatch }) => {
-  let { ranges } = state.selection;
-  if (ranges.some((sel) => sel.from === sel.to))
-    return selectWord({ state, dispatch });
-  let searchedText = state.sliceDoc(ranges[0].from, ranges[0].to);
-  if (state.selection.ranges.some((r) => state.sliceDoc(r.from, r.to) != searchedText))
-    return false;
-  let range = findNextOccurrence(state, searchedText);
-  if (!range)
-    return false;
-  dispatch(state.update({
-    selection: state.selection.addRange(EditorSelection.range(range.from, range.to), false),
-    effects: EditorView.scrollIntoView(range.to)
-  }));
-  return true;
-};
-var searchConfigFacet = /* @__PURE__ */ Facet.define({
-  combine(configs) {
-    return combineConfig(configs, {
-      top: false,
-      caseSensitive: false,
-      literal: false,
-      regexp: false,
-      wholeWord: false,
-      createPanel: (view) => new SearchPanel(view),
-      scrollToMatch: (range) => EditorView.scrollIntoView(range)
-    });
-  }
-});
-class SearchQuery {
-  constructor(config) {
-    this.search = config.search;
-    this.caseSensitive = !!config.caseSensitive;
-    this.literal = !!config.literal;
-    this.regexp = !!config.regexp;
-    this.replace = config.replace || "";
-    this.valid = !!this.search && (!this.regexp || validRegExp(this.search));
-    this.unquoted = this.unquote(this.search);
-    this.wholeWord = !!config.wholeWord;
-    this.test = config.test;
-  }
-  unquote(text) {
-    return this.literal ? text : text.replace(/\\([nrt\\])/g, (_, ch) => ch == "n" ? `
-` : ch == "r" ? "\r" : ch == "t" ? "\t" : "\\");
-  }
-  eq(other) {
-    return this.search == other.search && this.replace == other.replace && this.caseSensitive == other.caseSensitive && this.regexp == other.regexp && this.wholeWord == other.wholeWord && this.test == other.test;
-  }
-  create() {
-    return this.regexp ? new RegExpQuery(this) : new StringQuery(this);
-  }
-  getCursor(state, from = 0, to) {
-    let st = state.doc ? state : EditorState.create({ doc: state });
-    if (to == null)
-      to = st.doc.length;
-    return this.regexp ? regexpCursor(this, st, from, to) : stringCursor(this, st, from, to);
-  }
-}
-
-class QueryType2 {
-  constructor(spec) {
-    this.spec = spec;
-  }
-}
-function wrapStringTest(test, state, inner) {
-  return (from, to, buffer, bufferPos) => {
-    if (inner && !inner(from, to, buffer, bufferPos))
-      return false;
-    let match = from >= bufferPos && to <= bufferPos + buffer.length ? buffer.slice(from - bufferPos, to - bufferPos) : state.doc.sliceString(from, to);
-    return test(match, state, from, to);
-  };
-}
-function stringCursor(spec, state, from, to) {
-  let test;
-  if (spec.wholeWord)
-    test = stringWordTest(state.doc, state.charCategorizer(state.selection.main.head));
-  if (spec.test)
-    test = wrapStringTest(spec.test, state, test);
-  return new SearchCursor(state.doc, spec.unquoted, from, to, spec.caseSensitive ? undefined : (x) => x.toLowerCase(), test);
-}
-function stringWordTest(doc2, categorizer) {
-  return (from, to, buf, bufPos) => {
-    if (bufPos > from || bufPos + buf.length < to) {
-      bufPos = Math.max(0, from - 2);
-      buf = doc2.sliceString(bufPos, Math.min(doc2.length, to + 2));
-    }
-    return (categorizer(charBefore(buf, from - bufPos)) != CharCategory.Word || categorizer(charAfter(buf, from - bufPos)) != CharCategory.Word) && (categorizer(charAfter(buf, to - bufPos)) != CharCategory.Word || categorizer(charBefore(buf, to - bufPos)) != CharCategory.Word);
-  };
-}
-
-class StringQuery extends QueryType2 {
-  constructor(spec) {
-    super(spec);
-  }
-  nextMatch(state, curFrom, curTo) {
-    let cursor = stringCursor(this.spec, state, curTo, state.doc.length).nextOverlapping();
-    if (cursor.done) {
-      let end = Math.min(state.doc.length, curFrom + this.spec.unquoted.length);
-      cursor = stringCursor(this.spec, state, 0, end).nextOverlapping();
-    }
-    return cursor.done || cursor.value.from == curFrom && cursor.value.to == curTo ? null : cursor.value;
-  }
-  prevMatchInRange(state, from, to) {
-    for (let pos = to;; ) {
-      let start = Math.max(from, pos - 1e4 - this.spec.unquoted.length);
-      let cursor = stringCursor(this.spec, state, start, pos), range = null;
-      while (!cursor.nextOverlapping().done)
-        range = cursor.value;
-      if (range)
-        return range;
-      if (start == from)
-        return null;
-      pos -= 1e4;
-    }
-  }
-  prevMatch(state, curFrom, curTo) {
-    let found = this.prevMatchInRange(state, 0, curFrom);
-    if (!found)
-      found = this.prevMatchInRange(state, Math.max(0, curTo - this.spec.unquoted.length), state.doc.length);
-    return found && (found.from != curFrom || found.to != curTo) ? found : null;
-  }
-  getReplacement(_result) {
-    return this.spec.unquote(this.spec.replace);
-  }
-  matchAll(state, limit) {
-    let cursor = stringCursor(this.spec, state, 0, state.doc.length), ranges = [];
-    while (!cursor.next().done) {
-      if (ranges.length >= limit)
-        return null;
-      ranges.push(cursor.value);
-    }
-    return ranges;
-  }
-  highlight(state, from, to, add2) {
-    let cursor = stringCursor(this.spec, state, Math.max(0, from - this.spec.unquoted.length), Math.min(to + this.spec.unquoted.length, state.doc.length));
-    while (!cursor.next().done)
-      add2(cursor.value.from, cursor.value.to);
-  }
-}
-function wrapRegexpTest(test, state, inner) {
-  return (from, to, match) => {
-    return (!inner || inner(from, to, match)) && test(match[0], state, from, to);
-  };
-}
-function regexpCursor(spec, state, from, to) {
-  let test;
-  if (spec.wholeWord)
-    test = regexpWordTest(state.charCategorizer(state.selection.main.head));
-  if (spec.test)
-    test = wrapRegexpTest(spec.test, state, test);
-  return new RegExpCursor(state.doc, spec.search, { ignoreCase: !spec.caseSensitive, test }, from, to);
-}
-function charBefore(str, index) {
-  return str.slice(findClusterBreak2(str, index, false), index);
-}
-function charAfter(str, index) {
-  return str.slice(index, findClusterBreak2(str, index));
-}
-function regexpWordTest(categorizer) {
-  return (_from, _to, match) => !match[0].length || (categorizer(charBefore(match.input, match.index)) != CharCategory.Word || categorizer(charAfter(match.input, match.index)) != CharCategory.Word) && (categorizer(charAfter(match.input, match.index + match[0].length)) != CharCategory.Word || categorizer(charBefore(match.input, match.index + match[0].length)) != CharCategory.Word);
-}
-
-class RegExpQuery extends QueryType2 {
-  nextMatch(state, curFrom, curTo) {
-    let cursor = regexpCursor(this.spec, state, curTo, state.doc.length).next();
-    if (cursor.done)
-      cursor = regexpCursor(this.spec, state, 0, curFrom).next();
-    return cursor.done ? null : cursor.value;
-  }
-  prevMatchInRange(state, from, to) {
-    for (let size = 1;; size++) {
-      let start = Math.max(from, to - size * 1e4);
-      let cursor = regexpCursor(this.spec, state, start, to), range = null;
-      while (!cursor.next().done)
-        range = cursor.value;
-      if (range && (start == from || range.from > start + 10))
-        return range;
-      if (start == from)
-        return null;
-    }
-  }
-  prevMatch(state, curFrom, curTo) {
-    return this.prevMatchInRange(state, 0, curFrom) || this.prevMatchInRange(state, curTo, state.doc.length);
-  }
-  getReplacement(result) {
-    return this.spec.unquote(this.spec.replace).replace(/\$([$&]|\d+)/g, (m, i2) => {
-      if (i2 == "&")
-        return result.match[0];
-      if (i2 == "$")
-        return "$";
-      for (let l = i2.length;l > 0; l--) {
-        let n = +i2.slice(0, l);
-        if (n > 0 && n < result.match.length)
-          return result.match[n] + i2.slice(l);
-      }
-      return m;
-    });
-  }
-  matchAll(state, limit) {
-    let cursor = regexpCursor(this.spec, state, 0, state.doc.length), ranges = [];
-    while (!cursor.next().done) {
-      if (ranges.length >= limit)
-        return null;
-      ranges.push(cursor.value);
-    }
-    return ranges;
-  }
-  highlight(state, from, to, add2) {
-    let cursor = regexpCursor(this.spec, state, Math.max(0, from - 250), Math.min(to + 250, state.doc.length));
-    while (!cursor.next().done)
-      add2(cursor.value.from, cursor.value.to);
-  }
-}
-var setSearchQuery = /* @__PURE__ */ StateEffect.define();
-var togglePanel = /* @__PURE__ */ StateEffect.define();
-var searchState = /* @__PURE__ */ StateField.define({
-  create(state) {
-    return new SearchState(defaultQuery(state).create(), null);
-  },
-  update(value, tr) {
-    for (let effect of tr.effects) {
-      if (effect.is(setSearchQuery))
-        value = new SearchState(effect.value.create(), value.panel);
-      else if (effect.is(togglePanel))
-        value = new SearchState(value.query, effect.value ? createSearchPanel : null);
-    }
-    return value;
-  },
-  provide: (f) => showPanel.from(f, (val) => val.panel)
-});
-class SearchState {
-  constructor(query, panel) {
-    this.query = query;
-    this.panel = panel;
-  }
-}
-var matchMark = /* @__PURE__ */ Decoration.mark({ class: "cm-searchMatch" });
-var selectedMatchMark = /* @__PURE__ */ Decoration.mark({ class: "cm-searchMatch cm-searchMatch-selected" });
-var searchHighlighter = /* @__PURE__ */ ViewPlugin.fromClass(class {
-  constructor(view) {
-    this.view = view;
-    this.decorations = this.highlight(view.state.field(searchState));
-  }
-  update(update) {
-    let state = update.state.field(searchState);
-    if (state != update.startState.field(searchState) || update.docChanged || update.selectionSet || update.viewportChanged)
-      this.decorations = this.highlight(state);
-  }
-  highlight({ query, panel }) {
-    if (!panel || !query.spec.valid)
-      return Decoration.none;
-    let { view } = this;
-    let builder = new RangeSetBuilder;
-    for (let i2 = 0, ranges = view.visibleRanges, l = ranges.length;i2 < l; i2++) {
-      let { from, to } = ranges[i2];
-      while (i2 < l - 1 && to > ranges[i2 + 1].from - 2 * 250)
-        to = ranges[++i2].to;
-      query.highlight(view.state, from, to, (from2, to2) => {
-        let selected = view.state.selection.ranges.some((r) => r.from == from2 && r.to == to2);
-        builder.add(from2, to2, selected ? selectedMatchMark : matchMark);
-      });
-    }
-    return builder.finish();
-  }
-}, {
-  decorations: (v) => v.decorations
-});
-function searchCommand(f) {
-  return (view) => {
-    let state = view.state.field(searchState, false);
-    return state && state.query.spec.valid ? f(view, state) : openSearchPanel(view);
-  };
-}
-var findNext = /* @__PURE__ */ searchCommand((view, { query }) => {
-  let { to } = view.state.selection.main;
-  let next = query.nextMatch(view.state, to, to);
-  if (!next)
-    return false;
-  let selection = EditorSelection.single(next.from, next.to);
-  let config = view.state.facet(searchConfigFacet);
-  view.dispatch({
-    selection,
-    effects: [announceMatch(view, next), config.scrollToMatch(selection.main, view)],
-    userEvent: "select.search"
-  });
-  selectSearchInput(view);
-  return true;
-});
-var findPrevious = /* @__PURE__ */ searchCommand((view, { query }) => {
-  let { state } = view, { from } = state.selection.main;
-  let prev = query.prevMatch(state, from, from);
-  if (!prev)
-    return false;
-  let selection = EditorSelection.single(prev.from, prev.to);
-  let config = view.state.facet(searchConfigFacet);
-  view.dispatch({
-    selection,
-    effects: [announceMatch(view, prev), config.scrollToMatch(selection.main, view)],
-    userEvent: "select.search"
-  });
-  selectSearchInput(view);
-  return true;
-});
-var selectMatches = /* @__PURE__ */ searchCommand((view, { query }) => {
-  let ranges = query.matchAll(view.state, 1000);
-  if (!ranges || !ranges.length)
-    return false;
-  view.dispatch({
-    selection: EditorSelection.create(ranges.map((r) => EditorSelection.range(r.from, r.to))),
-    userEvent: "select.search.matches"
-  });
-  return true;
-});
-var selectSelectionMatches = ({ state, dispatch }) => {
-  let sel = state.selection;
-  if (sel.ranges.length > 1 || sel.main.empty)
-    return false;
-  let { from, to } = sel.main;
-  let ranges = [], main = 0;
-  for (let cur = new SearchCursor(state.doc, state.sliceDoc(from, to));!cur.next().done; ) {
-    if (ranges.length > 1000)
-      return false;
-    if (cur.value.from == from)
-      main = ranges.length;
-    ranges.push(EditorSelection.range(cur.value.from, cur.value.to));
-  }
-  dispatch(state.update({
-    selection: EditorSelection.create(ranges, main),
-    userEvent: "select.search.matches"
-  }));
-  return true;
-};
-var replaceNext = /* @__PURE__ */ searchCommand((view, { query }) => {
-  let { state } = view, { from, to } = state.selection.main;
-  if (state.readOnly)
-    return false;
-  let match = query.nextMatch(state, from, from);
-  if (!match)
-    return false;
-  let next = match;
-  let changes = [], selection, replacement;
-  let effects = [];
-  if (next.from == from && next.to == to) {
-    replacement = state.toText(query.getReplacement(next));
-    changes.push({ from: next.from, to: next.to, insert: replacement });
-    next = query.nextMatch(state, next.from, next.to);
-    effects.push(EditorView.announce.of(state.phrase("replaced match on line $", state.doc.lineAt(from).number) + "."));
-  }
-  let changeSet = view.state.changes(changes);
-  if (next) {
-    selection = EditorSelection.single(next.from, next.to).map(changeSet);
-    effects.push(announceMatch(view, next));
-    effects.push(state.facet(searchConfigFacet).scrollToMatch(selection.main, view));
-  }
-  view.dispatch({
-    changes: changeSet,
-    selection,
-    effects,
-    userEvent: "input.replace"
-  });
-  return true;
-});
-var replaceAll = /* @__PURE__ */ searchCommand((view, { query }) => {
-  if (view.state.readOnly)
-    return false;
-  let changes = query.matchAll(view.state, 1e9).map((match) => {
-    let { from, to } = match;
-    return { from, to, insert: query.getReplacement(match) };
-  });
-  if (!changes.length)
-    return false;
-  let announceText = view.state.phrase("replaced $ matches", changes.length) + ".";
-  view.dispatch({
-    changes,
-    effects: EditorView.announce.of(announceText),
-    userEvent: "input.replace.all"
-  });
-  return true;
-});
-function createSearchPanel(view) {
-  return view.state.facet(searchConfigFacet).createPanel(view);
-}
-function defaultQuery(state, fallback) {
-  var _a2, _b, _c, _d, _e;
-  let sel = state.selection.main;
-  let selText = sel.empty || sel.to > sel.from + 100 ? "" : state.sliceDoc(sel.from, sel.to);
-  if (fallback && !selText)
-    return fallback;
-  let config = state.facet(searchConfigFacet);
-  return new SearchQuery({
-    search: ((_a2 = fallback === null || fallback === undefined ? undefined : fallback.literal) !== null && _a2 !== undefined ? _a2 : config.literal) ? selText : selText.replace(/\n/g, "\\n"),
-    caseSensitive: (_b = fallback === null || fallback === undefined ? undefined : fallback.caseSensitive) !== null && _b !== undefined ? _b : config.caseSensitive,
-    literal: (_c = fallback === null || fallback === undefined ? undefined : fallback.literal) !== null && _c !== undefined ? _c : config.literal,
-    regexp: (_d = fallback === null || fallback === undefined ? undefined : fallback.regexp) !== null && _d !== undefined ? _d : config.regexp,
-    wholeWord: (_e = fallback === null || fallback === undefined ? undefined : fallback.wholeWord) !== null && _e !== undefined ? _e : config.wholeWord
-  });
-}
-function getSearchInput(view) {
-  let panel = getPanel(view, createSearchPanel);
-  return panel && panel.dom.querySelector("[main-field]");
-}
-function selectSearchInput(view) {
-  let input = getSearchInput(view);
-  if (input && input == view.root.activeElement)
-    input.select();
-}
-var openSearchPanel = (view) => {
-  let state = view.state.field(searchState, false);
-  if (state && state.panel) {
-    let searchInput = getSearchInput(view);
-    if (searchInput && searchInput != view.root.activeElement) {
-      let query = defaultQuery(view.state, state.query.spec);
-      if (query.valid)
-        view.dispatch({ effects: setSearchQuery.of(query) });
-      searchInput.focus();
-      searchInput.select();
-    }
-  } else {
-    view.dispatch({ effects: [
-      togglePanel.of(true),
-      state ? setSearchQuery.of(defaultQuery(view.state, state.query.spec)) : StateEffect.appendConfig.of(searchExtensions)
-    ] });
-  }
-  return true;
-};
-var closeSearchPanel = (view) => {
-  let state = view.state.field(searchState, false);
-  if (!state || !state.panel)
-    return false;
-  let panel = getPanel(view, createSearchPanel);
-  if (panel && panel.dom.contains(view.root.activeElement))
-    view.focus();
-  view.dispatch({ effects: togglePanel.of(false) });
-  return true;
-};
-var searchKeymap = [
-  { key: "Mod-f", run: openSearchPanel, scope: "editor search-panel" },
-  { key: "F3", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
-  { key: "Mod-g", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
-  { key: "Escape", run: closeSearchPanel, scope: "editor search-panel" },
-  { key: "Mod-Shift-l", run: selectSelectionMatches },
-  { key: "Mod-Alt-g", run: gotoLine },
-  { key: "Mod-d", run: selectNextOccurrence, preventDefault: true }
-];
-
-class SearchPanel {
-  constructor(view) {
-    this.view = view;
-    let query = this.query = view.state.field(searchState).query.spec;
-    this.commit = this.commit.bind(this);
-    this.searchField = crelt("input", {
-      value: query.search,
-      placeholder: phrase(view, "Find"),
-      "aria-label": phrase(view, "Find"),
-      class: "cm-textfield",
-      name: "search",
-      form: "",
-      "main-field": "true",
-      onchange: this.commit,
-      onkeyup: this.commit
-    });
-    this.replaceField = crelt("input", {
-      value: query.replace,
-      placeholder: phrase(view, "Replace"),
-      "aria-label": phrase(view, "Replace"),
-      class: "cm-textfield",
-      name: "replace",
-      form: "",
-      onchange: this.commit,
-      onkeyup: this.commit
-    });
-    this.caseField = crelt("input", {
-      type: "checkbox",
-      name: "case",
-      form: "",
-      checked: query.caseSensitive,
-      onchange: this.commit
-    });
-    this.reField = crelt("input", {
-      type: "checkbox",
-      name: "re",
-      form: "",
-      checked: query.regexp,
-      onchange: this.commit
-    });
-    this.wordField = crelt("input", {
-      type: "checkbox",
-      name: "word",
-      form: "",
-      checked: query.wholeWord,
-      onchange: this.commit
-    });
-    function button(name2, onclick, content2) {
-      return crelt("button", { class: "cm-button", name: name2, onclick, type: "button" }, content2);
-    }
-    this.dom = crelt("div", { onkeydown: (e) => this.keydown(e), class: "cm-search" }, [
-      this.searchField,
-      button("next", () => findNext(view), [phrase(view, "next")]),
-      button("prev", () => findPrevious(view), [phrase(view, "previous")]),
-      button("select", () => selectMatches(view), [phrase(view, "all")]),
-      crelt("label", null, [this.caseField, phrase(view, "match case")]),
-      crelt("label", null, [this.reField, phrase(view, "regexp")]),
-      crelt("label", null, [this.wordField, phrase(view, "by word")]),
-      ...view.state.readOnly ? [] : [
-        crelt("br"),
-        this.replaceField,
-        button("replace", () => replaceNext(view), [phrase(view, "replace")]),
-        button("replaceAll", () => replaceAll(view), [phrase(view, "replace all")])
-      ],
-      crelt("button", {
-        name: "close",
-        onclick: () => closeSearchPanel(view),
-        "aria-label": phrase(view, "close"),
-        type: "button"
-      }, ["×"])
-    ]);
-  }
-  commit() {
-    let query = new SearchQuery({
-      search: this.searchField.value,
-      caseSensitive: this.caseField.checked,
-      regexp: this.reField.checked,
-      wholeWord: this.wordField.checked,
-      replace: this.replaceField.value
-    });
-    if (!query.eq(this.query)) {
-      this.query = query;
-      this.view.dispatch({ effects: setSearchQuery.of(query) });
-    }
-  }
-  keydown(e) {
-    if (runScopeHandlers(this.view, e, "search-panel")) {
-      e.preventDefault();
-    } else if (e.keyCode == 13 && e.target == this.searchField) {
-      e.preventDefault();
-      (e.shiftKey ? findPrevious : findNext)(this.view);
-    } else if (e.keyCode == 13 && e.target == this.replaceField) {
-      e.preventDefault();
-      replaceNext(this.view);
-    }
-  }
-  update(update) {
-    for (let tr of update.transactions)
-      for (let effect of tr.effects) {
-        if (effect.is(setSearchQuery) && !effect.value.eq(this.query))
-          this.setQuery(effect.value);
-      }
-  }
-  setQuery(query) {
-    this.query = query;
-    this.searchField.value = query.search;
-    this.replaceField.value = query.replace;
-    this.caseField.checked = query.caseSensitive;
-    this.reField.checked = query.regexp;
-    this.wordField.checked = query.wholeWord;
-  }
-  mount() {
-    this.searchField.select();
-  }
-  get pos() {
-    return 80;
-  }
-  get top() {
-    return this.view.state.facet(searchConfigFacet).top;
-  }
-}
-function phrase(view, phrase2) {
-  return view.state.phrase(phrase2);
-}
-var AnnounceMargin = 30;
-var Break = /[\s\.,:;?!]/;
-function announceMatch(view, { from, to }) {
-  let line = view.state.doc.lineAt(from), lineEnd = view.state.doc.lineAt(to).to;
-  let start = Math.max(line.from, from - AnnounceMargin), end = Math.min(lineEnd, to + AnnounceMargin);
-  let text = view.state.sliceDoc(start, end);
-  if (start != line.from) {
-    for (let i2 = 0;i2 < AnnounceMargin; i2++)
-      if (!Break.test(text[i2 + 1]) && Break.test(text[i2])) {
-        text = text.slice(i2);
-        break;
-      }
-  }
-  if (end != lineEnd) {
-    for (let i2 = text.length - 1;i2 > text.length - AnnounceMargin; i2--)
-      if (!Break.test(text[i2 - 1]) && Break.test(text[i2])) {
-        text = text.slice(0, i2);
-        break;
-      }
-  }
-  return EditorView.announce.of(`${view.state.phrase("current match")}. ${text} ${view.state.phrase("on line")} ${line.number}.`);
-}
-var baseTheme3 = /* @__PURE__ */ EditorView.baseTheme({
-  ".cm-panel.cm-search": {
-    padding: "2px 6px 4px",
-    position: "relative",
-    "& [name=close]": {
-      position: "absolute",
-      top: "0",
-      right: "4px",
-      backgroundColor: "inherit",
-      border: "none",
-      font: "inherit",
-      padding: 0,
-      margin: 0
-    },
-    "& input, & button, & label": {
-      margin: ".2em .6em .2em 0"
-    },
-    "& input[type=checkbox]": {
-      marginRight: ".2em"
-    },
-    "& label": {
-      fontSize: "80%",
-      whiteSpace: "pre"
-    }
-  },
-  "&light .cm-searchMatch": { backgroundColor: "#ffff0054" },
-  "&dark .cm-searchMatch": { backgroundColor: "#00ffff8a" },
-  "&light .cm-searchMatch-selected": { backgroundColor: "#ff6a0054" },
-  "&dark .cm-searchMatch-selected": { backgroundColor: "#ff00ff8a" }
-});
-var searchExtensions = [
-  searchState,
-  /* @__PURE__ */ Prec.low(searchHighlighter),
-  baseTheme3
-];
-
-// node_modules/@codemirror/autocomplete/dist/index.js
-class CompletionContext {
-  constructor(state, pos, explicit, view) {
-    this.state = state;
-    this.pos = pos;
-    this.explicit = explicit;
-    this.view = view;
-    this.abortListeners = [];
-    this.abortOnDocChange = false;
-  }
-  tokenBefore(types2) {
-    let token = syntaxTree(this.state).resolveInner(this.pos, -1);
-    while (token && types2.indexOf(token.name) < 0)
-      token = token.parent;
-    return token ? {
-      from: token.from,
-      to: this.pos,
-      text: this.state.sliceDoc(token.from, this.pos),
-      type: token.type
-    } : null;
-  }
-  matchBefore(expr) {
-    let line = this.state.doc.lineAt(this.pos);
-    let start = Math.max(line.from, this.pos - 250);
-    let str = line.text.slice(start - line.from, this.pos - line.from);
-    let found = str.search(ensureAnchor(expr, false));
-    return found < 0 ? null : { from: start + found, to: this.pos, text: str.slice(found) };
-  }
-  get aborted() {
-    return this.abortListeners == null;
-  }
-  addEventListener(type, listener, options) {
-    if (type == "abort" && this.abortListeners) {
-      this.abortListeners.push(listener);
-      if (options && options.onDocChange)
-        this.abortOnDocChange = true;
-    }
-  }
-}
-function toSet(chars) {
-  let flat = Object.keys(chars).join("");
-  let words = /\w/.test(flat);
-  if (words)
-    flat = flat.replace(/\w/g, "");
-  return `[${words ? "\\w" : ""}${flat.replace(/[^\w\s]/g, "\\$&")}]`;
-}
-function prefixMatch(options) {
-  let first = Object.create(null), rest = Object.create(null);
-  for (let { label } of options) {
-    first[label[0]] = true;
-    for (let i2 = 1;i2 < label.length; i2++)
-      rest[label[i2]] = true;
-  }
-  let source = toSet(first) + toSet(rest) + "*$";
-  return [new RegExp("^" + source), new RegExp(source)];
-}
-function completeFromList(list) {
-  let options = list.map((o) => typeof o == "string" ? { label: o } : o);
-  let [validFor, match] = options.every((o) => /^\w+$/.test(o.label)) ? [/\w*$/, /\w+$/] : prefixMatch(options);
-  return (context) => {
-    let token = context.matchBefore(match);
-    return token || context.explicit ? { from: token ? token.from : context.pos, options, validFor } : null;
-  };
-}
-class Option {
-  constructor(completion, source, match, score) {
-    this.completion = completion;
-    this.source = source;
-    this.match = match;
-    this.score = score;
-  }
-}
-function cur(state) {
-  return state.selection.main.from;
-}
-function ensureAnchor(expr, start) {
-  var _a2;
-  let { source } = expr;
-  let addStart = start && source[0] != "^", addEnd = source[source.length - 1] != "$";
-  if (!addStart && !addEnd)
-    return expr;
-  return new RegExp(`${addStart ? "^" : ""}(?:${source})${addEnd ? "$" : ""}`, (_a2 = expr.flags) !== null && _a2 !== undefined ? _a2 : expr.ignoreCase ? "i" : "");
-}
-var pickedCompletion = /* @__PURE__ */ Annotation.define();
-function insertCompletionText(state, text, from, to) {
-  let { main } = state.selection, fromOff = from - main.from, toOff = to - main.from;
-  return {
-    ...state.changeByRange((range) => {
-      if (range != main && from != to && state.sliceDoc(range.from + fromOff, range.from + toOff) != state.sliceDoc(from, to))
-        return { range };
-      let lines = state.toText(text);
-      return {
-        changes: { from: range.from + fromOff, to: to == main.from ? range.to : range.from + toOff, insert: lines },
-        range: EditorSelection.cursor(range.from + fromOff + lines.length)
-      };
-    }),
-    scrollIntoView: true,
-    userEvent: "input.complete"
-  };
-}
-var SourceCache = /* @__PURE__ */ new WeakMap;
-function asSource(source) {
-  if (!Array.isArray(source))
-    return source;
-  let known = SourceCache.get(source);
-  if (!known)
-    SourceCache.set(source, known = completeFromList(source));
-  return known;
-}
-var startCompletionEffect = /* @__PURE__ */ StateEffect.define();
-var closeCompletionEffect = /* @__PURE__ */ StateEffect.define();
-
-class FuzzyMatcher {
-  constructor(pattern) {
-    this.pattern = pattern;
-    this.chars = [];
-    this.folded = [];
-    this.any = [];
-    this.precise = [];
-    this.byWord = [];
-    this.score = 0;
-    this.matched = [];
-    for (let p = 0;p < pattern.length; ) {
-      let char = codePointAt2(pattern, p), size = codePointSize2(char);
-      this.chars.push(char);
-      let part = pattern.slice(p, p + size), upper = part.toUpperCase();
-      this.folded.push(codePointAt2(upper == part ? part.toLowerCase() : upper, 0));
-      p += size;
-    }
-    this.astral = pattern.length != this.chars.length;
-  }
-  ret(score, matched) {
-    this.score = score;
-    this.matched = matched;
-    return this;
-  }
-  match(word) {
-    if (this.pattern.length == 0)
-      return this.ret(-100, []);
-    if (word.length < this.pattern.length)
-      return null;
-    let { chars, folded, any, precise, byWord } = this;
-    if (chars.length == 1) {
-      let first = codePointAt2(word, 0), firstSize = codePointSize2(first);
-      let score = firstSize == word.length ? 0 : -100;
-      if (first == chars[0])
-        ;
-      else if (first == folded[0])
-        score += -200;
-      else
-        return null;
-      return this.ret(score, [0, firstSize]);
-    }
-    let direct = word.indexOf(this.pattern);
-    if (direct == 0)
-      return this.ret(word.length == this.pattern.length ? 0 : -100, [0, this.pattern.length]);
-    let len = chars.length, anyTo = 0;
-    if (direct < 0) {
-      for (let i2 = 0, e = Math.min(word.length, 200);i2 < e && anyTo < len; ) {
-        let next = codePointAt2(word, i2);
-        if (next == chars[anyTo] || next == folded[anyTo])
-          any[anyTo++] = i2;
-        i2 += codePointSize2(next);
-      }
-      if (anyTo < len)
-        return null;
-    }
-    let preciseTo = 0;
-    let byWordTo = 0, byWordFolded = false;
-    let adjacentTo = 0, adjacentStart = -1, adjacentEnd = -1;
-    let hasLower = /[a-z]/.test(word), wordAdjacent = true;
-    for (let i2 = 0, e = Math.min(word.length, 200), prevType = 0;i2 < e && byWordTo < len; ) {
-      let next = codePointAt2(word, i2);
-      if (direct < 0) {
-        if (preciseTo < len && next == chars[preciseTo])
-          precise[preciseTo++] = i2;
-        if (adjacentTo < len) {
-          if (next == chars[adjacentTo] || next == folded[adjacentTo]) {
-            if (adjacentTo == 0)
-              adjacentStart = i2;
-            adjacentEnd = i2 + 1;
-            adjacentTo++;
-          } else {
-            adjacentTo = 0;
-          }
-        }
-      }
-      let ch, type = next < 255 ? next >= 48 && next <= 57 || next >= 97 && next <= 122 ? 2 : next >= 65 && next <= 90 ? 1 : 0 : (ch = fromCodePoint(next)) != ch.toLowerCase() ? 1 : ch != ch.toUpperCase() ? 2 : 0;
-      if (!i2 || type == 1 && hasLower || prevType == 0 && type != 0) {
-        if (chars[byWordTo] == next || folded[byWordTo] == next && (byWordFolded = true))
-          byWord[byWordTo++] = i2;
-        else if (byWord.length)
-          wordAdjacent = false;
-      }
-      prevType = type;
-      i2 += codePointSize2(next);
-    }
-    if (byWordTo == len && byWord[0] == 0 && wordAdjacent)
-      return this.result(-100 + (byWordFolded ? -200 : 0), byWord, word);
-    if (adjacentTo == len && adjacentStart == 0)
-      return this.ret(-200 - word.length + (adjacentEnd == word.length ? 0 : -100), [0, adjacentEnd]);
-    if (direct > -1)
-      return this.ret(-700 - word.length, [direct, direct + this.pattern.length]);
-    if (adjacentTo == len)
-      return this.ret(-200 + -700 - word.length, [adjacentStart, adjacentEnd]);
-    if (byWordTo == len)
-      return this.result(-100 + (byWordFolded ? -200 : 0) + -700 + (wordAdjacent ? 0 : -1100), byWord, word);
-    return chars.length == 2 ? null : this.result((any[0] ? -700 : 0) + -200 + -1100, any, word);
-  }
-  result(score, positions, word) {
-    let result = [], i2 = 0;
-    for (let pos of positions) {
-      let to = pos + (this.astral ? codePointSize2(codePointAt2(word, pos)) : 1);
-      if (i2 && result[i2 - 1] == pos)
-        result[i2 - 1] = to;
-      else {
-        result[i2++] = pos;
-        result[i2++] = to;
-      }
-    }
-    return this.ret(score - word.length, result);
-  }
-}
-
-class StrictMatcher {
-  constructor(pattern) {
-    this.pattern = pattern;
-    this.matched = [];
-    this.score = 0;
-    this.folded = pattern.toLowerCase();
-  }
-  match(word) {
-    if (word.length < this.pattern.length)
-      return null;
-    let start = word.slice(0, this.pattern.length);
-    let match = start == this.pattern ? 0 : start.toLowerCase() == this.folded ? -200 : null;
-    if (match == null)
-      return null;
-    this.matched = [0, start.length];
-    this.score = match + (word.length == this.pattern.length ? 0 : -100);
-    return this;
-  }
-}
-var completionConfig = /* @__PURE__ */ Facet.define({
-  combine(configs) {
-    return combineConfig(configs, {
-      activateOnTyping: true,
-      activateOnCompletion: () => false,
-      activateOnTypingDelay: 100,
-      selectOnOpen: true,
-      override: null,
-      closeOnBlur: true,
-      maxRenderedOptions: 100,
-      defaultKeymap: true,
-      tooltipClass: () => "",
-      optionClass: () => "",
-      aboveCursor: false,
-      icons: true,
-      addToOptions: [],
-      positionInfo: defaultPositionInfo,
-      filterStrict: false,
-      compareCompletions: (a, b) => (a.sortText || a.label).localeCompare(b.sortText || b.label),
-      interactionDelay: 75,
-      updateSyncTime: 100
-    }, {
-      defaultKeymap: (a, b) => a && b,
-      closeOnBlur: (a, b) => a && b,
-      icons: (a, b) => a && b,
-      tooltipClass: (a, b) => (c) => joinClass(a(c), b(c)),
-      optionClass: (a, b) => (c) => joinClass(a(c), b(c)),
-      addToOptions: (a, b) => a.concat(b),
-      filterStrict: (a, b) => a || b
-    });
-  }
-});
-function joinClass(a, b) {
-  return a ? b ? a + " " + b : a : b;
-}
-function defaultPositionInfo(view, list, option, info, space, tooltip) {
-  let rtl = view.textDirection == Direction.RTL, left = rtl, narrow = false;
-  let side = "top", offset, maxWidth;
-  let spaceLeft = list.left - space.left, spaceRight = space.right - list.right;
-  let infoWidth = info.right - info.left, infoHeight = info.bottom - info.top;
-  if (left && spaceLeft < Math.min(infoWidth, spaceRight))
-    left = false;
-  else if (!left && spaceRight < Math.min(infoWidth, spaceLeft))
-    left = true;
-  if (infoWidth <= (left ? spaceLeft : spaceRight)) {
-    offset = Math.max(space.top, Math.min(option.top, space.bottom - infoHeight)) - list.top;
-    maxWidth = Math.min(400, left ? spaceLeft : spaceRight);
-  } else {
-    narrow = true;
-    maxWidth = Math.min(400, (rtl ? list.right : space.right - list.left) - 30);
-    let spaceBelow = space.bottom - list.bottom;
-    if (spaceBelow >= infoHeight || spaceBelow > list.top) {
-      offset = option.bottom - list.top;
-    } else {
-      side = "bottom";
-      offset = list.bottom - option.top;
-    }
-  }
-  let scaleY = (list.bottom - list.top) / tooltip.offsetHeight;
-  let scaleX = (list.right - list.left) / tooltip.offsetWidth;
-  return {
-    style: `${side}: ${offset / scaleY}px; max-width: ${maxWidth / scaleX}px`,
-    class: "cm-completionInfo-" + (narrow ? rtl ? "left-narrow" : "right-narrow" : left ? "left" : "right")
-  };
-}
-function optionContent(config) {
-  let content2 = config.addToOptions.slice();
-  if (config.icons)
-    content2.push({
-      render(completion) {
-        let icon = document.createElement("div");
-        icon.classList.add("cm-completionIcon");
-        if (completion.type)
-          icon.classList.add(...completion.type.split(/\s+/g).map((cls) => "cm-completionIcon-" + cls));
-        icon.setAttribute("aria-hidden", "true");
-        return icon;
-      },
-      position: 20
-    });
-  content2.push({
-    render(completion, _s, _v, match) {
-      let labelElt = document.createElement("span");
-      labelElt.className = "cm-completionLabel";
-      let label = completion.displayLabel || completion.label, off = 0;
-      for (let j = 0;j < match.length; ) {
-        let from = match[j++], to = match[j++];
-        if (from > off)
-          labelElt.appendChild(document.createTextNode(label.slice(off, from)));
-        let span = labelElt.appendChild(document.createElement("span"));
-        span.appendChild(document.createTextNode(label.slice(from, to)));
-        span.className = "cm-completionMatchedText";
-        off = to;
-      }
-      if (off < label.length)
-        labelElt.appendChild(document.createTextNode(label.slice(off)));
-      return labelElt;
-    },
-    position: 50
-  }, {
-    render(completion) {
-      if (!completion.detail)
-        return null;
-      let detailElt = document.createElement("span");
-      detailElt.className = "cm-completionDetail";
-      detailElt.textContent = completion.detail;
-      return detailElt;
-    },
-    position: 80
-  });
-  return content2.sort((a, b) => a.position - b.position).map((a) => a.render);
-}
-function rangeAroundSelected(total, selected, max) {
-  if (total <= max)
-    return { from: 0, to: total };
-  if (selected < 0)
-    selected = 0;
-  if (selected <= total >> 1) {
-    let off2 = Math.floor(selected / max);
-    return { from: off2 * max, to: (off2 + 1) * max };
-  }
-  let off = Math.floor((total - selected) / max);
-  return { from: total - (off + 1) * max, to: total - off * max };
-}
-
-class CompletionTooltip {
-  constructor(view, stateField, applyCompletion) {
-    this.view = view;
-    this.stateField = stateField;
-    this.applyCompletion = applyCompletion;
-    this.info = null;
-    this.infoDestroy = null;
-    this.placeInfoReq = {
-      read: () => this.measureInfo(),
-      write: (pos) => this.placeInfo(pos),
-      key: this
-    };
-    this.space = null;
-    this.currentClass = "";
-    let cState = view.state.field(stateField);
-    let { options, selected } = cState.open;
-    let config = view.state.facet(completionConfig);
-    this.optionContent = optionContent(config);
-    this.optionClass = config.optionClass;
-    this.tooltipClass = config.tooltipClass;
-    this.range = rangeAroundSelected(options.length, selected, config.maxRenderedOptions);
-    this.dom = document.createElement("div");
-    this.dom.className = "cm-tooltip-autocomplete";
-    this.updateTooltipClass(view.state);
-    this.dom.addEventListener("mousedown", (e) => {
-      let { options: options2 } = view.state.field(stateField).open;
-      for (let dom = e.target, match;dom && dom != this.dom; dom = dom.parentNode) {
-        if (dom.nodeName == "LI" && (match = /-(\d+)$/.exec(dom.id)) && +match[1] < options2.length) {
-          this.applyCompletion(view, options2[+match[1]]);
-          e.preventDefault();
-          return;
-        }
-      }
-    });
-    this.dom.addEventListener("focusout", (e) => {
-      let state = view.state.field(this.stateField, false);
-      if (state && state.tooltip && view.state.facet(completionConfig).closeOnBlur && e.relatedTarget != view.contentDOM)
-        view.dispatch({ effects: closeCompletionEffect.of(null) });
-    });
-    this.showOptions(options, cState.id);
-  }
-  mount() {
-    this.updateSel();
-  }
-  showOptions(options, id) {
-    if (this.list)
-      this.list.remove();
-    this.list = this.dom.appendChild(this.createListBox(options, id, this.range));
-    this.list.addEventListener("scroll", () => {
-      if (this.info)
-        this.view.requestMeasure(this.placeInfoReq);
-    });
-  }
-  update(update) {
-    var _a2;
-    let cState = update.state.field(this.stateField);
-    let prevState = update.startState.field(this.stateField);
-    this.updateTooltipClass(update.state);
-    if (cState != prevState) {
-      let { options, selected, disabled } = cState.open;
-      if (!prevState.open || prevState.open.options != options) {
-        this.range = rangeAroundSelected(options.length, selected, update.state.facet(completionConfig).maxRenderedOptions);
-        this.showOptions(options, cState.id);
-      }
-      this.updateSel();
-      if (disabled != ((_a2 = prevState.open) === null || _a2 === undefined ? undefined : _a2.disabled))
-        this.dom.classList.toggle("cm-tooltip-autocomplete-disabled", !!disabled);
-    }
-  }
-  updateTooltipClass(state) {
-    let cls = this.tooltipClass(state);
-    if (cls != this.currentClass) {
-      for (let c of this.currentClass.split(" "))
-        if (c)
-          this.dom.classList.remove(c);
-      for (let c of cls.split(" "))
-        if (c)
-          this.dom.classList.add(c);
-      this.currentClass = cls;
-    }
-  }
-  positioned(space) {
-    this.space = space;
-    if (this.info)
-      this.view.requestMeasure(this.placeInfoReq);
-  }
-  updateSel() {
-    let cState = this.view.state.field(this.stateField), open = cState.open;
-    if (open.selected > -1 && open.selected < this.range.from || open.selected >= this.range.to) {
-      this.range = rangeAroundSelected(open.options.length, open.selected, this.view.state.facet(completionConfig).maxRenderedOptions);
-      this.showOptions(open.options, cState.id);
-    }
-    let newSel = this.updateSelectedOption(open.selected);
-    if (newSel) {
-      this.destroyInfo();
-      let { completion } = open.options[open.selected];
-      let { info } = completion;
-      if (!info)
-        return;
-      let infoResult = typeof info === "string" ? document.createTextNode(info) : info(completion);
-      if (!infoResult)
-        return;
-      if ("then" in infoResult) {
-        infoResult.then((obj) => {
-          if (obj && this.view.state.field(this.stateField, false) == cState)
-            this.addInfoPane(obj, completion);
-        }).catch((e) => logException(this.view.state, e, "completion info"));
-      } else {
-        this.addInfoPane(infoResult, completion);
-        newSel.setAttribute("aria-describedby", this.info.id);
-      }
-    }
-  }
-  addInfoPane(content2, completion) {
-    this.destroyInfo();
-    let wrap = this.info = document.createElement("div");
-    wrap.className = "cm-tooltip cm-completionInfo";
-    wrap.id = "cm-completionInfo-" + Math.floor(Math.random() * 65535).toString(16);
-    if (content2.nodeType != null) {
-      wrap.appendChild(content2);
-      this.infoDestroy = null;
-    } else {
-      let { dom, destroy } = content2;
-      wrap.appendChild(dom);
-      this.infoDestroy = destroy || null;
-    }
-    this.dom.appendChild(wrap);
-    this.view.requestMeasure(this.placeInfoReq);
-  }
-  updateSelectedOption(selected) {
-    let set = null;
-    for (let opt = this.list.firstChild, i2 = this.range.from;opt; opt = opt.nextSibling, i2++) {
-      if (opt.nodeName != "LI" || !opt.id) {
-        i2--;
-      } else if (i2 == selected) {
-        if (!opt.hasAttribute("aria-selected")) {
-          opt.setAttribute("aria-selected", "true");
-          set = opt;
-        }
-      } else {
-        if (opt.hasAttribute("aria-selected")) {
-          opt.removeAttribute("aria-selected");
-          opt.removeAttribute("aria-describedby");
-        }
-      }
-    }
-    if (set)
-      scrollIntoView2(this.list, set);
-    return set;
-  }
-  measureInfo() {
-    let sel = this.dom.querySelector("[aria-selected]");
-    if (!sel || !this.info)
-      return null;
-    let listRect = this.dom.getBoundingClientRect();
-    let infoRect = this.info.getBoundingClientRect();
-    let selRect = sel.getBoundingClientRect();
-    let space = this.space;
-    if (!space) {
-      let docElt = this.dom.ownerDocument.documentElement;
-      space = { left: 0, top: 0, right: docElt.clientWidth, bottom: docElt.clientHeight };
-    }
-    if (selRect.top > Math.min(space.bottom, listRect.bottom) - 10 || selRect.bottom < Math.max(space.top, listRect.top) + 10)
-      return null;
-    return this.view.state.facet(completionConfig).positionInfo(this.view, listRect, selRect, infoRect, space, this.dom);
-  }
-  placeInfo(pos) {
-    if (this.info) {
-      if (pos) {
-        if (pos.style)
-          this.info.style.cssText = pos.style;
-        this.info.className = "cm-tooltip cm-completionInfo " + (pos.class || "");
-      } else {
-        this.info.style.cssText = "top: -1e6px";
-      }
-    }
-  }
-  createListBox(options, id, range) {
-    const ul = document.createElement("ul");
-    ul.id = id;
-    ul.setAttribute("role", "listbox");
-    ul.setAttribute("aria-expanded", "true");
-    ul.setAttribute("aria-label", this.view.state.phrase("Completions"));
-    ul.addEventListener("mousedown", (e) => {
-      if (e.target == ul)
-        e.preventDefault();
-    });
-    let curSection = null;
-    for (let i2 = range.from;i2 < range.to; i2++) {
-      let { completion, match } = options[i2], { section } = completion;
-      if (section) {
-        let name2 = typeof section == "string" ? section : section.name;
-        if (name2 != curSection && (i2 > range.from || range.from == 0)) {
-          curSection = name2;
-          if (typeof section != "string" && section.header) {
-            ul.appendChild(section.header(section));
-          } else {
-            let header = ul.appendChild(document.createElement("completion-section"));
-            header.textContent = name2;
-          }
-        }
-      }
-      const li = ul.appendChild(document.createElement("li"));
-      li.id = id + "-" + i2;
-      li.setAttribute("role", "option");
-      let cls = this.optionClass(completion);
-      if (cls)
-        li.className = cls;
-      for (let source of this.optionContent) {
-        let node = source(completion, this.view.state, this.view, match);
-        if (node)
-          li.appendChild(node);
-      }
-    }
-    if (range.from)
-      ul.classList.add("cm-completionListIncompleteTop");
-    if (range.to < options.length)
-      ul.classList.add("cm-completionListIncompleteBottom");
-    return ul;
-  }
-  destroyInfo() {
-    if (this.info) {
-      if (this.infoDestroy)
-        this.infoDestroy();
-      this.info.remove();
-      this.info = null;
-    }
-  }
-  destroy() {
-    this.destroyInfo();
-  }
-}
-function completionTooltip(stateField, applyCompletion) {
-  return (view) => new CompletionTooltip(view, stateField, applyCompletion);
-}
-function scrollIntoView2(container, element) {
-  let parent = container.getBoundingClientRect();
-  let self = element.getBoundingClientRect();
-  let scaleY = parent.height / container.offsetHeight;
-  if (self.top < parent.top)
-    container.scrollTop -= (parent.top - self.top) / scaleY;
-  else if (self.bottom > parent.bottom)
-    container.scrollTop += (self.bottom - parent.bottom) / scaleY;
-}
-function score(option) {
-  return (option.boost || 0) * 100 + (option.apply ? 10 : 0) + (option.info ? 5 : 0) + (option.type ? 1 : 0);
-}
-function sortOptions(active, state) {
-  let options = [];
-  let sections = null, dynamicSectionScore = null;
-  let addOption = (option) => {
-    options.push(option);
-    let { section } = option.completion;
-    if (section) {
-      if (!sections)
-        sections = [];
-      let name2 = typeof section == "string" ? section : section.name;
-      if (!sections.some((s) => s.name == name2))
-        sections.push(typeof section == "string" ? { name: name2 } : section);
-    }
-  };
-  let conf = state.facet(completionConfig);
-  for (let a of active)
-    if (a.hasResult()) {
-      let getMatch = a.result.getMatch;
-      if (a.result.filter === false) {
-        for (let option of a.result.options) {
-          addOption(new Option(option, a.source, getMatch ? getMatch(option) : [], 1e9 - options.length));
-        }
-      } else {
-        let pattern = state.sliceDoc(a.from, a.to), match;
-        let matcher = conf.filterStrict ? new StrictMatcher(pattern) : new FuzzyMatcher(pattern);
-        for (let option of a.result.options)
-          if (match = matcher.match(option.label)) {
-            let matched = !option.displayLabel ? match.matched : getMatch ? getMatch(option, match.matched) : [];
-            let score2 = match.score + (option.boost || 0);
-            addOption(new Option(option, a.source, matched, score2));
-            if (typeof option.section == "object" && option.section.rank === "dynamic") {
-              let { name: name2 } = option.section;
-              if (!dynamicSectionScore)
-                dynamicSectionScore = Object.create(null);
-              dynamicSectionScore[name2] = Math.max(score2, dynamicSectionScore[name2] || -1e9);
-            }
-          }
-      }
-    }
-  if (sections) {
-    let sectionOrder = Object.create(null), pos = 0;
-    let cmp = (a, b) => {
-      return (a.rank === "dynamic" && b.rank === "dynamic" ? dynamicSectionScore[b.name] - dynamicSectionScore[a.name] : 0) || (typeof a.rank == "number" ? a.rank : 1e9) - (typeof b.rank == "number" ? b.rank : 1e9) || (a.name < b.name ? -1 : 1);
-    };
-    for (let s of sections.sort(cmp)) {
-      pos -= 1e5;
-      sectionOrder[s.name] = pos;
-    }
-    for (let option of options) {
-      let { section } = option.completion;
-      if (section)
-        option.score += sectionOrder[typeof section == "string" ? section : section.name];
-    }
-  }
-  let result = [], prev = null;
-  let compare2 = conf.compareCompletions;
-  for (let opt of options.sort((a, b) => b.score - a.score || compare2(a.completion, b.completion))) {
-    let cur2 = opt.completion;
-    if (!prev || prev.label != cur2.label || prev.detail != cur2.detail || prev.type != null && cur2.type != null && prev.type != cur2.type || prev.apply != cur2.apply || prev.boost != cur2.boost)
-      result.push(opt);
-    else if (score(opt.completion) > score(prev))
-      result[result.length - 1] = opt;
-    prev = opt.completion;
-  }
-  return result;
-}
-
-class CompletionDialog {
-  constructor(options, attrs, tooltip, timestamp, selected, disabled) {
-    this.options = options;
-    this.attrs = attrs;
-    this.tooltip = tooltip;
-    this.timestamp = timestamp;
-    this.selected = selected;
-    this.disabled = disabled;
-  }
-  setSelected(selected, id) {
-    return selected == this.selected || selected >= this.options.length ? this : new CompletionDialog(this.options, makeAttrs(id, selected), this.tooltip, this.timestamp, selected, this.disabled);
-  }
-  static build(active, state, id, prev, conf, didSetActive) {
-    if (prev && !didSetActive && active.some((s) => s.isPending))
-      return prev.setDisabled();
-    let options = sortOptions(active, state);
-    if (!options.length)
-      return prev && active.some((a) => a.isPending) ? prev.setDisabled() : null;
-    let selected = state.facet(completionConfig).selectOnOpen ? 0 : -1;
-    if (prev && prev.selected != selected && prev.selected != -1) {
-      let selectedValue = prev.options[prev.selected].completion;
-      for (let i2 = 0;i2 < options.length; i2++)
-        if (options[i2].completion == selectedValue) {
-          selected = i2;
-          break;
-        }
-    }
-    return new CompletionDialog(options, makeAttrs(id, selected), {
-      pos: active.reduce((a, b) => b.hasResult() ? Math.min(a, b.from) : a, 1e8),
-      create: createTooltip,
-      above: conf.aboveCursor
-    }, prev ? prev.timestamp : Date.now(), selected, false);
-  }
-  map(changes) {
-    return new CompletionDialog(this.options, this.attrs, { ...this.tooltip, pos: changes.mapPos(this.tooltip.pos) }, this.timestamp, this.selected, this.disabled);
-  }
-  setDisabled() {
-    return new CompletionDialog(this.options, this.attrs, this.tooltip, this.timestamp, this.selected, true);
-  }
-}
-
-class CompletionState {
-  constructor(active, id, open) {
-    this.active = active;
-    this.id = id;
-    this.open = open;
-  }
-  static start() {
-    return new CompletionState(none3, "cm-ac-" + Math.floor(Math.random() * 2000000).toString(36), null);
-  }
-  update(tr) {
-    let { state } = tr, conf = state.facet(completionConfig);
-    let sources = conf.override || state.languageDataAt("autocomplete", cur(state)).map(asSource);
-    let active = sources.map((source) => {
-      let value = this.active.find((s) => s.source == source) || new ActiveSource(source, this.active.some((a) => a.state != 0) ? 1 : 0);
-      return value.update(tr, conf);
-    });
-    if (active.length == this.active.length && active.every((a, i2) => a == this.active[i2]))
-      active = this.active;
-    let open = this.open, didSet = tr.effects.some((e) => e.is(setActiveEffect));
-    if (open && tr.docChanged)
-      open = open.map(tr.changes);
-    if (tr.selection || active.some((a) => a.hasResult() && tr.changes.touchesRange(a.from, a.to)) || !sameResults(active, this.active) || didSet)
-      open = CompletionDialog.build(active, state, this.id, open, conf, didSet);
-    else if (open && open.disabled && !active.some((a) => a.isPending))
-      open = null;
-    if (!open && active.every((a) => !a.isPending) && active.some((a) => a.hasResult()))
-      active = active.map((a) => a.hasResult() ? new ActiveSource(a.source, 0) : a);
-    for (let effect of tr.effects)
-      if (effect.is(setSelectedEffect))
-        open = open && open.setSelected(effect.value, this.id);
-    return active == this.active && open == this.open ? this : new CompletionState(active, this.id, open);
-  }
-  get tooltip() {
-    return this.open ? this.open.tooltip : null;
-  }
-  get attrs() {
-    return this.open ? this.open.attrs : this.active.length ? baseAttrs : noAttrs2;
-  }
-}
-function sameResults(a, b) {
-  if (a == b)
-    return true;
-  for (let iA = 0, iB = 0;; ) {
-    while (iA < a.length && !a[iA].hasResult())
-      iA++;
-    while (iB < b.length && !b[iB].hasResult())
-      iB++;
-    let endA = iA == a.length, endB = iB == b.length;
-    if (endA || endB)
-      return endA == endB;
-    if (a[iA++].result != b[iB++].result)
-      return false;
-  }
-}
-var baseAttrs = {
-  "aria-autocomplete": "list"
-};
-var noAttrs2 = {};
-function makeAttrs(id, selected) {
-  let result = {
-    "aria-autocomplete": "list",
-    "aria-haspopup": "listbox",
-    "aria-controls": id
-  };
-  if (selected > -1)
-    result["aria-activedescendant"] = id + "-" + selected;
-  return result;
-}
-var none3 = [];
-function getUpdateType(tr, conf) {
-  if (tr.isUserEvent("input.complete")) {
-    let completion = tr.annotation(pickedCompletion);
-    if (completion && conf.activateOnCompletion(completion))
-      return 4 | 8;
-  }
-  let typing = tr.isUserEvent("input.type");
-  return typing && conf.activateOnTyping ? 4 | 1 : typing ? 1 : tr.isUserEvent("delete.backward") ? 2 : tr.selection ? 8 : tr.docChanged ? 16 : 0;
-}
-
-class ActiveSource {
-  constructor(source, state, explicit = false) {
-    this.source = source;
-    this.state = state;
-    this.explicit = explicit;
-  }
-  hasResult() {
-    return false;
-  }
-  get isPending() {
-    return this.state == 1;
-  }
-  update(tr, conf) {
-    let type = getUpdateType(tr, conf), value = this;
-    if (type & 8 || type & 16 && this.touches(tr))
-      value = new ActiveSource(value.source, 0);
-    if (type & 4 && value.state == 0)
-      value = new ActiveSource(this.source, 1);
-    value = value.updateFor(tr, type);
-    for (let effect of tr.effects) {
-      if (effect.is(startCompletionEffect))
-        value = new ActiveSource(value.source, 1, effect.value);
-      else if (effect.is(closeCompletionEffect))
-        value = new ActiveSource(value.source, 0);
-      else if (effect.is(setActiveEffect)) {
-        for (let active of effect.value)
-          if (active.source == value.source)
-            value = active;
-      }
-    }
-    return value;
-  }
-  updateFor(tr, type) {
-    return this.map(tr.changes);
-  }
-  map(changes) {
-    return this;
-  }
-  touches(tr) {
-    return tr.changes.touchesRange(cur(tr.state));
-  }
-}
-
-class ActiveResult extends ActiveSource {
-  constructor(source, explicit, limit, result, from, to) {
-    super(source, 3, explicit);
-    this.limit = limit;
-    this.result = result;
-    this.from = from;
-    this.to = to;
-  }
-  hasResult() {
-    return true;
-  }
-  updateFor(tr, type) {
-    var _a2;
-    if (!(type & 3))
-      return this.map(tr.changes);
-    let result = this.result;
-    if (result.map && !tr.changes.empty)
-      result = result.map(result, tr.changes);
-    let from = tr.changes.mapPos(this.from), to = tr.changes.mapPos(this.to, 1);
-    let pos = cur(tr.state);
-    if (pos > to || !result || type & 2 && (cur(tr.startState) == this.from || pos < this.limit))
-      return new ActiveSource(this.source, type & 4 ? 1 : 0);
-    let limit = tr.changes.mapPos(this.limit);
-    if (checkValid(result.validFor, tr.state, from, to))
-      return new ActiveResult(this.source, this.explicit, limit, result, from, to);
-    if (result.update && (result = result.update(result, from, to, new CompletionContext(tr.state, pos, false))))
-      return new ActiveResult(this.source, this.explicit, limit, result, result.from, (_a2 = result.to) !== null && _a2 !== undefined ? _a2 : cur(tr.state));
-    return new ActiveSource(this.source, 1, this.explicit);
-  }
-  map(mapping) {
-    if (mapping.empty)
-      return this;
-    let result = this.result.map ? this.result.map(this.result, mapping) : this.result;
-    if (!result)
-      return new ActiveSource(this.source, 0);
-    return new ActiveResult(this.source, this.explicit, mapping.mapPos(this.limit), this.result, mapping.mapPos(this.from), mapping.mapPos(this.to, 1));
-  }
-  touches(tr) {
-    return tr.changes.touchesRange(this.from, this.to);
-  }
-}
-function checkValid(validFor, state, from, to) {
-  if (!validFor)
-    return false;
-  let text = state.sliceDoc(from, to);
-  return typeof validFor == "function" ? validFor(text, from, to, state) : ensureAnchor(validFor, true).test(text);
-}
-var setActiveEffect = /* @__PURE__ */ StateEffect.define({
-  map(sources, mapping) {
-    return sources.map((s) => s.map(mapping));
-  }
-});
-var setSelectedEffect = /* @__PURE__ */ StateEffect.define();
-var completionState = /* @__PURE__ */ StateField.define({
-  create() {
-    return CompletionState.start();
-  },
-  update(value, tr) {
-    return value.update(tr);
-  },
-  provide: (f) => [
-    showTooltip.from(f, (val) => val.tooltip),
-    EditorView.contentAttributes.from(f, (state) => state.attrs)
-  ]
-});
-function applyCompletion(view, option) {
-  const apply = option.completion.apply || option.completion.label;
-  let result = view.state.field(completionState).active.find((a) => a.source == option.source);
-  if (!(result instanceof ActiveResult))
-    return false;
-  if (typeof apply == "string")
-    view.dispatch({
-      ...insertCompletionText(view.state, apply, result.from, result.to),
-      annotations: pickedCompletion.of(option.completion)
-    });
-  else
-    apply(view, option.completion, result.from, result.to);
-  return true;
-}
-var createTooltip = /* @__PURE__ */ completionTooltip(completionState, applyCompletion);
-function moveCompletionSelection(forward, by = "option") {
-  return (view) => {
-    let cState = view.state.field(completionState, false);
-    if (!cState || !cState.open || cState.open.disabled || Date.now() - cState.open.timestamp < view.state.facet(completionConfig).interactionDelay)
-      return false;
-    let step = 1, tooltip;
-    if (by == "page" && (tooltip = getTooltip(view, cState.open.tooltip)))
-      step = Math.max(2, Math.floor(tooltip.dom.offsetHeight / tooltip.dom.querySelector("li").offsetHeight) - 1);
-    let { length } = cState.open.options;
-    let selected = cState.open.selected > -1 ? cState.open.selected + step * (forward ? 1 : -1) : forward ? 0 : length - 1;
-    if (selected < 0)
-      selected = by == "page" ? 0 : length - 1;
-    else if (selected >= length)
-      selected = by == "page" ? length - 1 : 0;
-    view.dispatch({ effects: setSelectedEffect.of(selected) });
-    return true;
-  };
-}
-var acceptCompletion = (view) => {
-  let cState = view.state.field(completionState, false);
-  if (view.state.readOnly || !cState || !cState.open || cState.open.selected < 0 || cState.open.disabled || Date.now() - cState.open.timestamp < view.state.facet(completionConfig).interactionDelay)
-    return false;
-  return applyCompletion(view, cState.open.options[cState.open.selected]);
-};
-var startCompletion = (view) => {
-  let cState = view.state.field(completionState, false);
-  if (!cState)
-    return false;
-  view.dispatch({ effects: startCompletionEffect.of(true) });
-  return true;
-};
-var closeCompletion = (view) => {
-  let cState = view.state.field(completionState, false);
-  if (!cState || !cState.active.some((a) => a.state != 0))
-    return false;
-  view.dispatch({ effects: closeCompletionEffect.of(null) });
-  return true;
-};
-
-class RunningQuery {
-  constructor(active, context) {
-    this.active = active;
-    this.context = context;
-    this.time = Date.now();
-    this.updates = [];
-    this.done = undefined;
-  }
-}
-var MaxUpdateCount = 50;
-var MinAbortTime = 1000;
-var completionPlugin = /* @__PURE__ */ ViewPlugin.fromClass(class {
-  constructor(view) {
-    this.view = view;
-    this.debounceUpdate = -1;
-    this.running = [];
-    this.debounceAccept = -1;
-    this.pendingStart = false;
-    this.composing = 0;
-    for (let active of view.state.field(completionState).active)
-      if (active.isPending)
-        this.startQuery(active);
-  }
-  update(update) {
-    let cState = update.state.field(completionState);
-    let conf = update.state.facet(completionConfig);
-    if (!update.selectionSet && !update.docChanged && update.startState.field(completionState) == cState)
-      return;
-    let doesReset = update.transactions.some((tr) => {
-      let type = getUpdateType(tr, conf);
-      return type & 8 || (tr.selection || tr.docChanged) && !(type & 3);
-    });
-    for (let i2 = 0;i2 < this.running.length; i2++) {
-      let query = this.running[i2];
-      if (doesReset || query.context.abortOnDocChange && update.docChanged || query.updates.length + update.transactions.length > MaxUpdateCount && Date.now() - query.time > MinAbortTime) {
-        for (let handler of query.context.abortListeners) {
-          try {
-            handler();
-          } catch (e) {
-            logException(this.view.state, e);
-          }
-        }
-        query.context.abortListeners = null;
-        this.running.splice(i2--, 1);
-      } else {
-        query.updates.push(...update.transactions);
-      }
-    }
-    if (this.debounceUpdate > -1)
-      clearTimeout(this.debounceUpdate);
-    if (update.transactions.some((tr) => tr.effects.some((e) => e.is(startCompletionEffect))))
-      this.pendingStart = true;
-    let delay = this.pendingStart ? 50 : conf.activateOnTypingDelay;
-    this.debounceUpdate = cState.active.some((a) => a.isPending && !this.running.some((q) => q.active.source == a.source)) ? setTimeout(() => this.startUpdate(), delay) : -1;
-    if (this.composing != 0)
-      for (let tr of update.transactions) {
-        if (tr.isUserEvent("input.type"))
-          this.composing = 2;
-        else if (this.composing == 2 && tr.selection)
-          this.composing = 3;
-      }
-  }
-  startUpdate() {
-    this.debounceUpdate = -1;
-    this.pendingStart = false;
-    let { state } = this.view, cState = state.field(completionState);
-    for (let active of cState.active) {
-      if (active.isPending && !this.running.some((r) => r.active.source == active.source))
-        this.startQuery(active);
-    }
-    if (this.running.length && cState.open && cState.open.disabled)
-      this.debounceAccept = setTimeout(() => this.accept(), this.view.state.facet(completionConfig).updateSyncTime);
-  }
-  startQuery(active) {
-    let { state } = this.view, pos = cur(state);
-    let context = new CompletionContext(state, pos, active.explicit, this.view);
-    let pending = new RunningQuery(active, context);
-    this.running.push(pending);
-    Promise.resolve(active.source(context)).then((result) => {
-      if (!pending.context.aborted) {
-        pending.done = result || null;
-        this.scheduleAccept();
-      }
-    }, (err) => {
-      this.view.dispatch({ effects: closeCompletionEffect.of(null) });
-      logException(this.view.state, err);
-    });
-  }
-  scheduleAccept() {
-    if (this.running.every((q) => q.done !== undefined))
-      this.accept();
-    else if (this.debounceAccept < 0)
-      this.debounceAccept = setTimeout(() => this.accept(), this.view.state.facet(completionConfig).updateSyncTime);
-  }
-  accept() {
-    var _a2;
-    if (this.debounceAccept > -1)
-      clearTimeout(this.debounceAccept);
-    this.debounceAccept = -1;
-    let updated = [];
-    let conf = this.view.state.facet(completionConfig), cState = this.view.state.field(completionState);
-    for (let i2 = 0;i2 < this.running.length; i2++) {
-      let query = this.running[i2];
-      if (query.done === undefined)
-        continue;
-      this.running.splice(i2--, 1);
-      if (query.done) {
-        let pos = cur(query.updates.length ? query.updates[0].startState : this.view.state);
-        let limit = Math.min(pos, query.done.from + (query.active.explicit ? 0 : 1));
-        let active = new ActiveResult(query.active.source, query.active.explicit, limit, query.done, query.done.from, (_a2 = query.done.to) !== null && _a2 !== undefined ? _a2 : pos);
-        for (let tr of query.updates)
-          active = active.update(tr, conf);
-        if (active.hasResult()) {
-          updated.push(active);
-          continue;
-        }
-      }
-      let current = cState.active.find((a) => a.source == query.active.source);
-      if (current && current.isPending) {
-        if (query.done == null) {
-          let active = new ActiveSource(query.active.source, 0);
-          for (let tr of query.updates)
-            active = active.update(tr, conf);
-          if (!active.isPending)
-            updated.push(active);
-        } else {
-          this.startQuery(current);
-        }
-      }
-    }
-    if (updated.length || cState.open && cState.open.disabled)
-      this.view.dispatch({ effects: setActiveEffect.of(updated) });
-  }
-}, {
-  eventHandlers: {
-    blur(event) {
-      let state = this.view.state.field(completionState, false);
-      if (state && state.tooltip && this.view.state.facet(completionConfig).closeOnBlur) {
-        let dialog = state.open && getTooltip(this.view, state.open.tooltip);
-        if (!dialog || !dialog.dom.contains(event.relatedTarget))
-          setTimeout(() => this.view.dispatch({ effects: closeCompletionEffect.of(null) }), 10);
-      }
-    },
-    compositionstart() {
-      this.composing = 1;
-    },
-    compositionend() {
-      if (this.composing == 3) {
-        setTimeout(() => this.view.dispatch({ effects: startCompletionEffect.of(false) }), 20);
-      }
-      this.composing = 0;
-    }
-  }
-});
-var windows = typeof navigator == "object" && /* @__PURE__ */ /Win/.test(navigator.platform);
-var commitCharacters = /* @__PURE__ */ Prec.highest(/* @__PURE__ */ EditorView.domEventHandlers({
-  keydown(event, view) {
-    let field = view.state.field(completionState, false);
-    if (!field || !field.open || field.open.disabled || field.open.selected < 0 || event.key.length > 1 || event.ctrlKey && !(windows && event.altKey) || event.metaKey)
-      return false;
-    let option = field.open.options[field.open.selected];
-    let result = field.active.find((a) => a.source == option.source);
-    let commitChars = option.completion.commitCharacters || result.result.commitCharacters;
-    if (commitChars && commitChars.indexOf(event.key) > -1)
-      applyCompletion(view, option);
-    return false;
-  }
-}));
-var baseTheme4 = /* @__PURE__ */ EditorView.baseTheme({
-  ".cm-tooltip.cm-tooltip-autocomplete": {
-    "& > ul": {
-      fontFamily: "monospace",
-      whiteSpace: "nowrap",
-      overflow: "hidden auto",
-      maxWidth_fallback: "700px",
-      maxWidth: "min(700px, 95vw)",
-      minWidth: "250px",
-      maxHeight: "10em",
-      height: "100%",
-      listStyle: "none",
-      margin: 0,
-      padding: 0,
-      "& > li, & > completion-section": {
-        padding: "1px 3px",
-        lineHeight: 1.2
-      },
-      "& > li": {
-        overflowX: "hidden",
-        textOverflow: "ellipsis",
-        cursor: "pointer"
-      },
-      "& > completion-section": {
-        display: "list-item",
-        borderBottom: "1px solid silver",
-        paddingLeft: "0.5em",
-        opacity: 0.7
-      }
-    }
-  },
-  "&light .cm-tooltip-autocomplete ul li[aria-selected]": {
-    background: "#17c",
-    color: "white"
-  },
-  "&light .cm-tooltip-autocomplete-disabled ul li[aria-selected]": {
-    background: "#777"
-  },
-  "&dark .cm-tooltip-autocomplete ul li[aria-selected]": {
-    background: "#347",
-    color: "white"
-  },
-  "&dark .cm-tooltip-autocomplete-disabled ul li[aria-selected]": {
-    background: "#444"
-  },
-  ".cm-completionListIncompleteTop:before, .cm-completionListIncompleteBottom:after": {
-    content: '"···"',
-    opacity: 0.5,
-    display: "block",
-    textAlign: "center"
-  },
-  ".cm-tooltip.cm-completionInfo": {
-    position: "absolute",
-    padding: "3px 9px",
-    width: "max-content",
-    maxWidth: `${400}px`,
-    boxSizing: "border-box",
-    whiteSpace: "pre-line"
-  },
-  ".cm-completionInfo.cm-completionInfo-left": { right: "100%" },
-  ".cm-completionInfo.cm-completionInfo-right": { left: "100%" },
-  ".cm-completionInfo.cm-completionInfo-left-narrow": { right: `${30}px` },
-  ".cm-completionInfo.cm-completionInfo-right-narrow": { left: `${30}px` },
-  "&light .cm-snippetField": { backgroundColor: "#00000022" },
-  "&dark .cm-snippetField": { backgroundColor: "#ffffff22" },
-  ".cm-snippetFieldPosition": {
-    verticalAlign: "text-top",
-    width: 0,
-    height: "1.15em",
-    display: "inline-block",
-    margin: "0 -0.7px -.7em",
-    borderLeft: "1.4px dotted #888"
-  },
-  ".cm-completionMatchedText": {
-    textDecoration: "underline"
-  },
-  ".cm-completionDetail": {
-    marginLeft: "0.5em",
-    fontStyle: "italic"
-  },
-  ".cm-completionIcon": {
-    fontSize: "90%",
-    width: ".8em",
-    display: "inline-block",
-    textAlign: "center",
-    paddingRight: ".6em",
-    opacity: "0.6",
-    boxSizing: "content-box"
-  },
-  ".cm-completionIcon-function, .cm-completionIcon-method": {
-    "&:after": { content: "'ƒ'" }
-  },
-  ".cm-completionIcon-class": {
-    "&:after": { content: "'○'" }
-  },
-  ".cm-completionIcon-interface": {
-    "&:after": { content: "'◌'" }
-  },
-  ".cm-completionIcon-variable": {
-    "&:after": { content: "'\uD835\uDC65'" }
-  },
-  ".cm-completionIcon-constant": {
-    "&:after": { content: "'\uD835\uDC36'" }
-  },
-  ".cm-completionIcon-type": {
-    "&:after": { content: "'\uD835\uDC61'" }
-  },
-  ".cm-completionIcon-enum": {
-    "&:after": { content: "'∪'" }
-  },
-  ".cm-completionIcon-property": {
-    "&:after": { content: "'□'" }
-  },
-  ".cm-completionIcon-keyword": {
-    "&:after": { content: "'\uD83D\uDD11︎'" }
-  },
-  ".cm-completionIcon-namespace": {
-    "&:after": { content: "'▢'" }
-  },
-  ".cm-completionIcon-text": {
-    "&:after": { content: "'abc'", fontSize: "50%", verticalAlign: "middle" }
-  }
-});
-var defaults2 = {
-  brackets: ["(", "[", "{", "'", '"'],
-  before: ")]}:;>",
-  stringPrefixes: []
-};
-var closeBracketEffect = /* @__PURE__ */ StateEffect.define({
-  map(value, mapping) {
-    let mapped = mapping.mapPos(value, -1, MapMode.TrackAfter);
-    return mapped == null ? undefined : mapped;
-  }
-});
-var closedBracket = /* @__PURE__ */ new class extends RangeValue {
-};
-closedBracket.startSide = 1;
-closedBracket.endSide = -1;
-var bracketState = /* @__PURE__ */ StateField.define({
-  create() {
-    return RangeSet.empty;
-  },
-  update(value, tr) {
-    value = value.map(tr.changes);
-    if (tr.selection) {
-      let line = tr.state.doc.lineAt(tr.selection.main.head);
-      value = value.update({ filter: (from) => from >= line.from && from <= line.to });
-    }
-    for (let effect of tr.effects)
-      if (effect.is(closeBracketEffect))
-        value = value.update({ add: [closedBracket.range(effect.value, effect.value + 1)] });
-    return value;
-  }
-});
-function closeBrackets() {
-  return [inputHandler2, bracketState];
-}
-var definedClosing = "()[]{}<>«»»«［］｛｝";
-function closing(ch) {
-  for (let i2 = 0;i2 < definedClosing.length; i2 += 2)
-    if (definedClosing.charCodeAt(i2) == ch)
-      return definedClosing.charAt(i2 + 1);
-  return fromCodePoint(ch < 128 ? ch : ch + 1);
-}
-function config(state, pos) {
-  return state.languageDataAt("closeBrackets", pos)[0] || defaults2;
-}
-var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
-var inputHandler2 = /* @__PURE__ */ EditorView.inputHandler.of((view, from, to, insert2) => {
-  if ((android ? view.composing : view.compositionStarted) || view.state.readOnly)
-    return false;
-  let sel = view.state.selection.main;
-  if (insert2.length > 2 || insert2.length == 2 && codePointSize2(codePointAt2(insert2, 0)) == 1 || from != sel.from || to != sel.to)
-    return false;
-  let tr = insertBracket(view.state, insert2);
-  if (!tr)
-    return false;
-  view.dispatch(tr);
-  return true;
-});
-var deleteBracketPair = ({ state, dispatch }) => {
-  if (state.readOnly)
-    return false;
-  let conf = config(state, state.selection.main.head);
-  let tokens = conf.brackets || defaults2.brackets;
-  let dont = null, changes = state.changeByRange((range) => {
-    if (range.empty) {
-      let before = prevChar(state.doc, range.head);
-      for (let token of tokens) {
-        if (token == before && nextChar(state.doc, range.head) == closing(codePointAt2(token, 0)))
-          return {
-            changes: { from: range.head - token.length, to: range.head + token.length },
-            range: EditorSelection.cursor(range.head - token.length)
-          };
-      }
-    }
-    return { range: dont = range };
-  });
-  if (!dont)
-    dispatch(state.update(changes, { scrollIntoView: true, userEvent: "delete.backward" }));
-  return !dont;
-};
-var closeBracketsKeymap = [
-  { key: "Backspace", run: deleteBracketPair }
-];
-function insertBracket(state, bracket2) {
-  let conf = config(state, state.selection.main.head);
-  let tokens = conf.brackets || defaults2.brackets;
-  for (let tok of tokens) {
-    let closed = closing(codePointAt2(tok, 0));
-    if (bracket2 == tok)
-      return closed == tok ? handleSame(state, tok, tokens.indexOf(tok + tok + tok) > -1, conf) : handleOpen(state, tok, closed, conf.before || defaults2.before);
-    if (bracket2 == closed && closedBracketAt(state, state.selection.main.from))
-      return handleClose(state, tok, closed);
-  }
-  return null;
-}
-function closedBracketAt(state, pos) {
-  let found = false;
-  state.field(bracketState).between(0, state.doc.length, (from) => {
-    if (from == pos)
-      found = true;
-  });
-  return found;
-}
-function nextChar(doc2, pos) {
-  let next = doc2.sliceString(pos, pos + 2);
-  return next.slice(0, codePointSize2(codePointAt2(next, 0)));
-}
-function prevChar(doc2, pos) {
-  let prev = doc2.sliceString(pos - 2, pos);
-  return codePointSize2(codePointAt2(prev, 0)) == prev.length ? prev : prev.slice(1);
-}
-function handleOpen(state, open, close, closeBefore) {
-  let dont = null, changes = state.changeByRange((range) => {
-    if (!range.empty)
-      return {
-        changes: [{ insert: open, from: range.from }, { insert: close, from: range.to }],
-        effects: closeBracketEffect.of(range.to + open.length),
-        range: EditorSelection.range(range.anchor + open.length, range.head + open.length)
-      };
-    let next = nextChar(state.doc, range.head);
-    if (!next || /\s/.test(next) || closeBefore.indexOf(next) > -1)
-      return {
-        changes: { insert: open + close, from: range.head },
-        effects: closeBracketEffect.of(range.head + open.length),
-        range: EditorSelection.cursor(range.head + open.length)
-      };
-    return { range: dont = range };
-  });
-  return dont ? null : state.update(changes, {
-    scrollIntoView: true,
-    userEvent: "input.type"
-  });
-}
-function handleClose(state, _open, close) {
-  let dont = null, changes = state.changeByRange((range) => {
-    if (range.empty && nextChar(state.doc, range.head) == close)
-      return {
-        changes: { from: range.head, to: range.head + close.length, insert: close },
-        range: EditorSelection.cursor(range.head + close.length)
-      };
-    return dont = { range };
-  });
-  return dont ? null : state.update(changes, {
-    scrollIntoView: true,
-    userEvent: "input.type"
-  });
-}
-function handleSame(state, token, allowTriple, config2) {
-  let stringPrefixes = config2.stringPrefixes || defaults2.stringPrefixes;
-  let dont = null, changes = state.changeByRange((range) => {
-    if (!range.empty)
-      return {
-        changes: [{ insert: token, from: range.from }, { insert: token, from: range.to }],
-        effects: closeBracketEffect.of(range.to + token.length),
-        range: EditorSelection.range(range.anchor + token.length, range.head + token.length)
-      };
-    let pos = range.head, next = nextChar(state.doc, pos), start;
-    if (next == token) {
-      if (nodeStart(state, pos)) {
-        return {
-          changes: { insert: token + token, from: pos },
-          effects: closeBracketEffect.of(pos + token.length),
-          range: EditorSelection.cursor(pos + token.length)
-        };
-      } else if (closedBracketAt(state, pos)) {
-        let isTriple = allowTriple && state.sliceDoc(pos, pos + token.length * 3) == token + token + token;
-        let content2 = isTriple ? token + token + token : token;
-        return {
-          changes: { from: pos, to: pos + content2.length, insert: content2 },
-          range: EditorSelection.cursor(pos + content2.length)
-        };
-      }
-    } else if (allowTriple && state.sliceDoc(pos - 2 * token.length, pos) == token + token && (start = canStartStringAt(state, pos - 2 * token.length, stringPrefixes)) > -1 && nodeStart(state, start)) {
-      return {
-        changes: { insert: token + token + token + token, from: pos },
-        effects: closeBracketEffect.of(pos + token.length),
-        range: EditorSelection.cursor(pos + token.length)
-      };
-    } else if (state.charCategorizer(pos)(next) != CharCategory.Word) {
-      if (canStartStringAt(state, pos, stringPrefixes) > -1 && !probablyInString(state, pos, token, stringPrefixes))
-        return {
-          changes: { insert: token + token, from: pos },
-          effects: closeBracketEffect.of(pos + token.length),
-          range: EditorSelection.cursor(pos + token.length)
-        };
-    }
-    return { range: dont = range };
-  });
-  return dont ? null : state.update(changes, {
-    scrollIntoView: true,
-    userEvent: "input.type"
-  });
-}
-function nodeStart(state, pos) {
-  let tree = syntaxTree(state).resolveInner(pos + 1);
-  return tree.parent && tree.from == pos;
-}
-function probablyInString(state, pos, quoteToken, prefixes) {
-  let node = syntaxTree(state).resolveInner(pos, -1);
-  let maxPrefix = prefixes.reduce((m, p) => Math.max(m, p.length), 0);
-  for (let i2 = 0;i2 < 5; i2++) {
-    let start = state.sliceDoc(node.from, Math.min(node.to, node.from + quoteToken.length + maxPrefix));
-    let quotePos = start.indexOf(quoteToken);
-    if (!quotePos || quotePos > -1 && prefixes.indexOf(start.slice(0, quotePos)) > -1) {
-      let first = node.firstChild;
-      while (first && first.from == node.from && first.to - first.from > quoteToken.length + quotePos) {
-        if (state.sliceDoc(first.to - quoteToken.length, first.to) == quoteToken)
-          return false;
-        first = first.firstChild;
-      }
-      return true;
-    }
-    let parent = node.to == pos && node.parent;
-    if (!parent)
-      break;
-    node = parent;
-  }
-  return false;
-}
-function canStartStringAt(state, pos, prefixes) {
-  let charCat = state.charCategorizer(pos);
-  if (charCat(state.sliceDoc(pos - 1, pos)) != CharCategory.Word)
-    return pos;
-  for (let prefix of prefixes) {
-    let start = pos - prefix.length;
-    if (state.sliceDoc(start, pos) == prefix && charCat(state.sliceDoc(start - 1, start)) != CharCategory.Word)
-      return start;
-  }
-  return -1;
-}
-function autocompletion(config2 = {}) {
-  return [
-    commitCharacters,
-    completionState,
-    completionConfig.of(config2),
-    completionPlugin,
-    completionKeymapExt,
-    baseTheme4
-  ];
-}
-var completionKeymap = [
-  { key: "Ctrl-Space", run: startCompletion },
-  { mac: "Alt-`", run: startCompletion },
-  { mac: "Alt-i", run: startCompletion },
-  { key: "Escape", run: closeCompletion },
-  { key: "ArrowDown", run: /* @__PURE__ */ moveCompletionSelection(true) },
-  { key: "ArrowUp", run: /* @__PURE__ */ moveCompletionSelection(false) },
-  { key: "PageDown", run: /* @__PURE__ */ moveCompletionSelection(true, "page") },
-  { key: "PageUp", run: /* @__PURE__ */ moveCompletionSelection(false, "page") },
-  { key: "Enter", run: acceptCompletion }
-];
-var completionKeymapExt = /* @__PURE__ */ Prec.highest(/* @__PURE__ */ keymap.computeN([completionConfig], (state) => state.facet(completionConfig).defaultKeymap ? [completionKeymap] : []));
-
-// node_modules/@codemirror/lint/dist/index.js
-class SelectedDiagnostic {
-  constructor(from, to, diagnostic) {
-    this.from = from;
-    this.to = to;
-    this.diagnostic = diagnostic;
-  }
-}
-
-class LintState {
-  constructor(diagnostics, panel, selected) {
-    this.diagnostics = diagnostics;
-    this.panel = panel;
-    this.selected = selected;
-  }
-  static init(diagnostics, panel, state) {
-    let diagnosticFilter = state.facet(lintConfig).markerFilter;
-    if (diagnosticFilter)
-      diagnostics = diagnosticFilter(diagnostics, state);
-    let sorted = diagnostics.slice().sort((a, b) => a.from - b.from || a.to - b.to);
-    let deco = new RangeSetBuilder, active = [], pos = 0;
-    let scan = state.doc.iter(), scanPos = 0, docLen = state.doc.length;
-    for (let i2 = 0;; ) {
-      let next = i2 == sorted.length ? null : sorted[i2];
-      if (!next && !active.length)
-        break;
-      let from, to;
-      if (active.length) {
-        from = pos;
-        to = active.reduce((p, d) => Math.min(p, d.to), next && next.from > from ? next.from : 1e8);
-      } else {
-        from = next.from;
-        if (from > docLen)
-          break;
-        to = next.to;
-        active.push(next);
-        i2++;
-      }
-      while (i2 < sorted.length) {
-        let next2 = sorted[i2];
-        if (next2.from == from && (next2.to > next2.from || next2.to == from)) {
-          active.push(next2);
-          i2++;
-          to = Math.min(next2.to, to);
-        } else {
-          to = Math.min(next2.from, to);
-          break;
-        }
-      }
-      to = Math.min(to, docLen);
-      let widget = false;
-      if (active.some((d) => d.from == from && (d.to == to || to == docLen))) {
-        widget = from == to;
-        if (!widget && to - from < 10) {
-          let behind = from - (scanPos + scan.value.length);
-          if (behind > 0) {
-            scan.next(behind);
-            scanPos = from;
-          }
-          for (let check = from;; ) {
-            if (check >= to) {
-              widget = true;
-              break;
-            }
-            if (!scan.lineBreak && scanPos + scan.value.length > check)
-              break;
-            check = scanPos + scan.value.length;
-            scanPos += scan.value.length;
-            scan.next();
-          }
-        }
-      }
-      let sev = maxSeverity(active);
-      if (widget) {
-        deco.add(from, from, Decoration.widget({
-          widget: new DiagnosticWidget(sev),
-          diagnostics: active.slice()
-        }));
-      } else {
-        let markClass = active.reduce((c, d) => d.markClass ? c + " " + d.markClass : c, "");
-        deco.add(from, to, Decoration.mark({
-          class: "cm-lintRange cm-lintRange-" + sev + markClass,
-          diagnostics: active.slice(),
-          inclusiveEnd: active.some((a) => a.to > to)
-        }));
-      }
-      pos = to;
-      if (pos == docLen)
-        break;
-      for (let i3 = 0;i3 < active.length; i3++)
-        if (active[i3].to <= pos)
-          active.splice(i3--, 1);
-    }
-    let set = deco.finish();
-    return new LintState(set, panel, findDiagnostic(set));
-  }
-}
-function findDiagnostic(diagnostics, diagnostic = null, after = 0) {
-  let found = null;
-  diagnostics.between(after, 1e9, (from, to, { spec }) => {
-    if (diagnostic && spec.diagnostics.indexOf(diagnostic) < 0)
-      return;
-    if (!found)
-      found = new SelectedDiagnostic(from, to, diagnostic || spec.diagnostics[0]);
-    else if (spec.diagnostics.indexOf(found.diagnostic) < 0)
-      return false;
-    else
-      found = new SelectedDiagnostic(found.from, to, found.diagnostic);
-  });
-  return found;
-}
-function hideTooltip(tr, tooltip) {
-  let from = tooltip.pos, to = tooltip.end || from;
-  let result = tr.state.facet(lintConfig).hideOn(tr, from, to);
-  if (result != null)
-    return result;
-  let line = tr.startState.doc.lineAt(tooltip.pos);
-  return !!(tr.effects.some((e) => e.is(setDiagnosticsEffect)) || tr.changes.touchesRange(line.from, Math.max(line.to, to)));
-}
-function maybeEnableLint(state, effects) {
-  return state.field(lintState, false) ? effects : effects.concat(StateEffect.appendConfig.of(lintExtensions));
-}
-var setDiagnosticsEffect = /* @__PURE__ */ StateEffect.define();
-var togglePanel2 = /* @__PURE__ */ StateEffect.define();
-var movePanelSelection = /* @__PURE__ */ StateEffect.define();
-var lintState = /* @__PURE__ */ StateField.define({
-  create() {
-    return new LintState(Decoration.none, null, null);
-  },
-  update(value, tr) {
-    if (tr.docChanged && value.diagnostics.size) {
-      let mapped = value.diagnostics.map(tr.changes), selected = null, panel = value.panel;
-      if (value.selected) {
-        let selPos = tr.changes.mapPos(value.selected.from, 1);
-        selected = findDiagnostic(mapped, value.selected.diagnostic, selPos) || findDiagnostic(mapped, null, selPos);
-      }
-      if (!mapped.size && panel && tr.state.facet(lintConfig).autoPanel)
-        panel = null;
-      value = new LintState(mapped, panel, selected);
-    }
-    for (let effect of tr.effects) {
-      if (effect.is(setDiagnosticsEffect)) {
-        let panel = !tr.state.facet(lintConfig).autoPanel ? value.panel : effect.value.length ? LintPanel.open : null;
-        value = LintState.init(effect.value, panel, tr.state);
-      } else if (effect.is(togglePanel2)) {
-        value = new LintState(value.diagnostics, effect.value ? LintPanel.open : null, value.selected);
-      } else if (effect.is(movePanelSelection)) {
-        value = new LintState(value.diagnostics, value.panel, effect.value);
-      }
-    }
-    return value;
-  },
-  provide: (f) => [
-    showPanel.from(f, (val) => val.panel),
-    EditorView.decorations.from(f, (s) => s.diagnostics)
-  ]
-});
-var activeMark = /* @__PURE__ */ Decoration.mark({ class: "cm-lintRange cm-lintRange-active" });
-function lintTooltip(view, pos, side) {
-  let { diagnostics } = view.state.field(lintState);
-  let found, start = -1, end = -1;
-  diagnostics.between(pos - (side < 0 ? 1 : 0), pos + (side > 0 ? 1 : 0), (from, to, { spec }) => {
-    if (pos >= from && pos <= to && (from == to || (pos > from || side > 0) && (pos < to || side < 0))) {
-      found = spec.diagnostics;
-      start = from;
-      end = to;
-      return false;
-    }
-  });
-  let diagnosticFilter = view.state.facet(lintConfig).tooltipFilter;
-  if (found && diagnosticFilter)
-    found = diagnosticFilter(found, view.state);
-  if (!found)
-    return null;
-  return {
-    pos: start,
-    end,
-    above: view.state.doc.lineAt(start).to < end,
-    create() {
-      return { dom: diagnosticsTooltip(view, found) };
-    }
-  };
-}
-function diagnosticsTooltip(view, diagnostics) {
-  return crelt("ul", { class: "cm-tooltip-lint" }, diagnostics.map((d) => renderDiagnostic(view, d, false)));
-}
-var openLintPanel = (view) => {
-  let field = view.state.field(lintState, false);
-  if (!field || !field.panel)
-    view.dispatch({ effects: maybeEnableLint(view.state, [togglePanel2.of(true)]) });
-  let panel = getPanel(view, LintPanel.open);
-  if (panel)
-    panel.dom.querySelector(".cm-panel-lint ul").focus();
-  return true;
-};
-var closeLintPanel = (view) => {
-  let field = view.state.field(lintState, false);
-  if (!field || !field.panel)
-    return false;
-  view.dispatch({ effects: togglePanel2.of(false) });
-  return true;
-};
-var nextDiagnostic = (view) => {
-  let field = view.state.field(lintState, false);
-  if (!field)
-    return false;
-  let sel = view.state.selection.main, next = findDiagnostic(field.diagnostics, null, sel.to + 1);
-  if (!next) {
-    next = findDiagnostic(field.diagnostics, null, 0);
-    if (!next || next.from == sel.from && next.to == sel.to)
-      return false;
-  }
-  view.dispatch({ selection: { anchor: next.from, head: next.to }, scrollIntoView: true });
-  return true;
-};
-var lintKeymap = [
-  { key: "Mod-Shift-m", run: openLintPanel, preventDefault: true },
-  { key: "F8", run: nextDiagnostic }
-];
-var lintConfig = /* @__PURE__ */ Facet.define({
-  combine(input) {
-    return {
-      sources: input.map((i2) => i2.source).filter((x) => x != null),
-      ...combineConfig(input.map((i2) => i2.config), {
-        delay: 750,
-        markerFilter: null,
-        tooltipFilter: null,
-        needsRefresh: null,
-        hideOn: () => null
-      }, {
-        delay: Math.max,
-        markerFilter: combineFilter,
-        tooltipFilter: combineFilter,
-        needsRefresh: (a, b) => !a ? b : !b ? a : (u) => a(u) || b(u),
-        hideOn: (a, b) => !a ? b : !b ? a : (t2, x, y) => a(t2, x, y) || b(t2, x, y),
-        autoPanel: (a, b) => a || b
-      })
-    };
-  }
-});
-function combineFilter(a, b) {
-  return !a ? b : !b ? a : (d, s) => b(a(d, s), s);
-}
-function assignKeys(actions) {
-  let assigned = [];
-  if (actions)
-    actions:
-      for (let { name: name2 } of actions) {
-        for (let i2 = 0;i2 < name2.length; i2++) {
-          let ch = name2[i2];
-          if (/[a-zA-Z]/.test(ch) && !assigned.some((c) => c.toLowerCase() == ch.toLowerCase())) {
-            assigned.push(ch);
-            continue actions;
-          }
-        }
-        assigned.push("");
-      }
-  return assigned;
-}
-function renderDiagnostic(view, diagnostic, inPanel) {
-  var _a2;
-  let keys2 = inPanel ? assignKeys(diagnostic.actions) : [];
-  return crelt("li", { class: "cm-diagnostic cm-diagnostic-" + diagnostic.severity }, crelt("span", { class: "cm-diagnosticText" }, diagnostic.renderMessage ? diagnostic.renderMessage(view) : diagnostic.message), (_a2 = diagnostic.actions) === null || _a2 === undefined ? undefined : _a2.map((action, i2) => {
-    let fired = false, click = (e) => {
-      e.preventDefault();
-      if (fired)
-        return;
-      fired = true;
-      let found = findDiagnostic(view.state.field(lintState).diagnostics, diagnostic);
-      if (found)
-        action.apply(view, found.from, found.to);
-    };
-    let { name: name2 } = action, keyIndex = keys2[i2] ? name2.indexOf(keys2[i2]) : -1;
-    let nameElt = keyIndex < 0 ? name2 : [
-      name2.slice(0, keyIndex),
-      crelt("u", name2.slice(keyIndex, keyIndex + 1)),
-      name2.slice(keyIndex + 1)
-    ];
-    let markClass = action.markClass ? " " + action.markClass : "";
-    return crelt("button", {
-      type: "button",
-      class: "cm-diagnosticAction" + markClass,
-      onclick: click,
-      onmousedown: click,
-      "aria-label": ` Action: ${name2}${keyIndex < 0 ? "" : ` (access key "${keys2[i2]})"`}.`
-    }, nameElt);
-  }), diagnostic.source && crelt("div", { class: "cm-diagnosticSource" }, diagnostic.source));
-}
-
-class DiagnosticWidget extends WidgetType {
-  constructor(sev) {
-    super();
-    this.sev = sev;
-  }
-  eq(other) {
-    return other.sev == this.sev;
-  }
-  toDOM() {
-    return crelt("span", { class: "cm-lintPoint cm-lintPoint-" + this.sev });
-  }
-}
-
-class PanelItem {
-  constructor(view, diagnostic) {
-    this.diagnostic = diagnostic;
-    this.id = "item_" + Math.floor(Math.random() * 4294967295).toString(16);
-    this.dom = renderDiagnostic(view, diagnostic, true);
-    this.dom.id = this.id;
-    this.dom.setAttribute("role", "option");
-  }
-}
-
-class LintPanel {
-  constructor(view) {
-    this.view = view;
-    this.items = [];
-    let onkeydown = (event) => {
-      if (event.ctrlKey || event.altKey || event.metaKey)
-        return;
-      if (event.keyCode == 27) {
-        closeLintPanel(this.view);
-        this.view.focus();
-      } else if (event.keyCode == 38 || event.keyCode == 33) {
-        this.moveSelection((this.selectedIndex - 1 + this.items.length) % this.items.length);
-      } else if (event.keyCode == 40 || event.keyCode == 34) {
-        this.moveSelection((this.selectedIndex + 1) % this.items.length);
-      } else if (event.keyCode == 36) {
-        this.moveSelection(0);
-      } else if (event.keyCode == 35) {
-        this.moveSelection(this.items.length - 1);
-      } else if (event.keyCode == 13) {
-        this.view.focus();
-      } else if (event.keyCode >= 65 && event.keyCode <= 90 && this.selectedIndex >= 0) {
-        let { diagnostic } = this.items[this.selectedIndex], keys2 = assignKeys(diagnostic.actions);
-        for (let i2 = 0;i2 < keys2.length; i2++)
-          if (keys2[i2].toUpperCase().charCodeAt(0) == event.keyCode) {
-            let found = findDiagnostic(this.view.state.field(lintState).diagnostics, diagnostic);
-            if (found)
-              diagnostic.actions[i2].apply(view, found.from, found.to);
-          }
-      } else {
-        return;
-      }
-      event.preventDefault();
-    };
-    let onclick = (event) => {
-      for (let i2 = 0;i2 < this.items.length; i2++) {
-        if (this.items[i2].dom.contains(event.target))
-          this.moveSelection(i2);
-      }
-    };
-    this.list = crelt("ul", {
-      tabIndex: 0,
-      role: "listbox",
-      "aria-label": this.view.state.phrase("Diagnostics"),
-      onkeydown,
-      onclick
-    });
-    this.dom = crelt("div", { class: "cm-panel-lint" }, this.list, crelt("button", {
-      type: "button",
-      name: "close",
-      "aria-label": this.view.state.phrase("close"),
-      onclick: () => closeLintPanel(this.view)
-    }, "×"));
-    this.update();
-  }
-  get selectedIndex() {
-    let selected = this.view.state.field(lintState).selected;
-    if (!selected)
-      return -1;
-    for (let i2 = 0;i2 < this.items.length; i2++)
-      if (this.items[i2].diagnostic == selected.diagnostic)
-        return i2;
-    return -1;
-  }
-  update() {
-    let { diagnostics, selected } = this.view.state.field(lintState);
-    let i2 = 0, needsSync = false, newSelectedItem = null;
-    let seen = new Set;
-    diagnostics.between(0, this.view.state.doc.length, (_start, _end, { spec }) => {
-      for (let diagnostic of spec.diagnostics) {
-        if (seen.has(diagnostic))
-          continue;
-        seen.add(diagnostic);
-        let found = -1, item;
-        for (let j = i2;j < this.items.length; j++)
-          if (this.items[j].diagnostic == diagnostic) {
-            found = j;
-            break;
-          }
-        if (found < 0) {
-          item = new PanelItem(this.view, diagnostic);
-          this.items.splice(i2, 0, item);
-          needsSync = true;
-        } else {
-          item = this.items[found];
-          if (found > i2) {
-            this.items.splice(i2, found - i2);
-            needsSync = true;
-          }
-        }
-        if (selected && item.diagnostic == selected.diagnostic) {
-          if (!item.dom.hasAttribute("aria-selected")) {
-            item.dom.setAttribute("aria-selected", "true");
-            newSelectedItem = item;
-          }
-        } else if (item.dom.hasAttribute("aria-selected")) {
-          item.dom.removeAttribute("aria-selected");
-        }
-        i2++;
-      }
-    });
-    while (i2 < this.items.length && !(this.items.length == 1 && this.items[0].diagnostic.from < 0)) {
-      needsSync = true;
-      this.items.pop();
-    }
-    if (this.items.length == 0) {
-      this.items.push(new PanelItem(this.view, {
-        from: -1,
-        to: -1,
-        severity: "info",
-        message: this.view.state.phrase("No diagnostics")
-      }));
-      needsSync = true;
-    }
-    if (newSelectedItem) {
-      this.list.setAttribute("aria-activedescendant", newSelectedItem.id);
-      this.view.requestMeasure({
-        key: this,
-        read: () => ({ sel: newSelectedItem.dom.getBoundingClientRect(), panel: this.list.getBoundingClientRect() }),
-        write: ({ sel, panel }) => {
-          let scaleY = panel.height / this.list.offsetHeight;
-          if (sel.top < panel.top)
-            this.list.scrollTop -= (panel.top - sel.top) / scaleY;
-          else if (sel.bottom > panel.bottom)
-            this.list.scrollTop += (sel.bottom - panel.bottom) / scaleY;
-        }
-      });
-    } else if (this.selectedIndex < 0) {
-      this.list.removeAttribute("aria-activedescendant");
-    }
-    if (needsSync)
-      this.sync();
-  }
-  sync() {
-    let domPos = this.list.firstChild;
-    function rm2() {
-      let prev = domPos;
-      domPos = prev.nextSibling;
-      prev.remove();
-    }
-    for (let item of this.items) {
-      if (item.dom.parentNode == this.list) {
-        while (domPos != item.dom)
-          rm2();
-        domPos = item.dom.nextSibling;
-      } else {
-        this.list.insertBefore(item.dom, domPos);
-      }
-    }
-    while (domPos)
-      rm2();
-  }
-  moveSelection(selectedIndex) {
-    if (this.selectedIndex < 0)
-      return;
-    let field = this.view.state.field(lintState);
-    let selection = findDiagnostic(field.diagnostics, this.items[selectedIndex].diagnostic);
-    if (!selection)
-      return;
-    this.view.dispatch({
-      selection: { anchor: selection.from, head: selection.to },
-      scrollIntoView: true,
-      effects: movePanelSelection.of(selection)
-    });
-  }
-  static open(view) {
-    return new LintPanel(view);
-  }
-}
-function svg(content2, attrs = `viewBox="0 0 40 40"`) {
-  return `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" ${attrs}>${encodeURIComponent(content2)}</svg>')`;
-}
-function underline(color) {
-  return svg(`<path d="m0 2.5 l2 -1.5 l1 0 l2 1.5 l1 0" stroke="${color}" fill="none" stroke-width=".7"/>`, `width="6" height="3"`);
-}
-var baseTheme5 = /* @__PURE__ */ EditorView.baseTheme({
-  ".cm-diagnostic": {
-    padding: "3px 6px 3px 8px",
-    marginLeft: "-1px",
-    display: "block",
-    whiteSpace: "pre-wrap"
-  },
-  ".cm-diagnostic-error": { borderLeft: "5px solid #d11" },
-  ".cm-diagnostic-warning": { borderLeft: "5px solid orange" },
-  ".cm-diagnostic-info": { borderLeft: "5px solid #999" },
-  ".cm-diagnostic-hint": { borderLeft: "5px solid #66d" },
-  ".cm-diagnosticAction": {
-    font: "inherit",
-    border: "none",
-    padding: "2px 4px",
-    backgroundColor: "#444",
-    color: "white",
-    borderRadius: "3px",
-    marginLeft: "8px",
-    cursor: "pointer"
-  },
-  ".cm-diagnosticSource": {
-    fontSize: "70%",
-    opacity: 0.7
-  },
-  ".cm-lintRange": {
-    backgroundPosition: "left bottom",
-    backgroundRepeat: "repeat-x",
-    paddingBottom: "0.7px"
-  },
-  ".cm-lintRange-error": { backgroundImage: /* @__PURE__ */ underline("#d11") },
-  ".cm-lintRange-warning": { backgroundImage: /* @__PURE__ */ underline("orange") },
-  ".cm-lintRange-info": { backgroundImage: /* @__PURE__ */ underline("#999") },
-  ".cm-lintRange-hint": { backgroundImage: /* @__PURE__ */ underline("#66d") },
-  ".cm-lintRange-active": { backgroundColor: "#ffdd9980" },
-  ".cm-tooltip-lint": {
-    padding: 0,
-    margin: 0
-  },
-  ".cm-lintPoint": {
-    position: "relative",
-    "&:after": {
-      content: '""',
-      position: "absolute",
-      bottom: 0,
-      left: "-2px",
-      borderLeft: "3px solid transparent",
-      borderRight: "3px solid transparent",
-      borderBottom: "4px solid #d11"
-    }
-  },
-  ".cm-lintPoint-warning": {
-    "&:after": { borderBottomColor: "orange" }
-  },
-  ".cm-lintPoint-info": {
-    "&:after": { borderBottomColor: "#999" }
-  },
-  ".cm-lintPoint-hint": {
-    "&:after": { borderBottomColor: "#66d" }
-  },
-  ".cm-panel.cm-panel-lint": {
-    position: "relative",
-    "& ul": {
-      maxHeight: "100px",
-      overflowY: "auto",
-      "& [aria-selected]": {
-        backgroundColor: "#ddd",
-        "& u": { textDecoration: "underline" }
-      },
-      "&:focus [aria-selected]": {
-        background_fallback: "#bdf",
-        backgroundColor: "Highlight",
-        color_fallback: "white",
-        color: "HighlightText"
-      },
-      "& u": { textDecoration: "none" },
-      padding: 0,
-      margin: 0
-    },
-    "& [name=close]": {
-      position: "absolute",
-      top: "0",
-      right: "2px",
-      background: "inherit",
-      border: "none",
-      font: "inherit",
-      padding: 0,
-      margin: 0
-    }
-  }
-});
-function severityWeight(sev) {
-  return sev == "error" ? 4 : sev == "warning" ? 3 : sev == "info" ? 2 : 1;
-}
-function maxSeverity(diagnostics) {
-  let sev = "hint", weight = 1;
-  for (let d of diagnostics) {
-    let w = severityWeight(d.severity);
-    if (w > weight) {
-      weight = w;
-      sev = d.severity;
-    }
-  }
-  return sev;
-}
-var lintExtensions = [
-  lintState,
-  /* @__PURE__ */ EditorView.decorations.compute([lintState], (state) => {
-    let { selected, panel } = state.field(lintState);
-    return !selected || !panel || selected.from == selected.to ? Decoration.none : Decoration.set([
-      activeMark.range(selected.from, selected.to)
-    ]);
-  }),
-  /* @__PURE__ */ hoverTooltip(lintTooltip, { hideOn: hideTooltip }),
-  baseTheme5
-];
-
-// node_modules/codemirror/dist/index.js
-var basicSetup = /* @__PURE__ */ (() => [
-  lineNumbers(),
-  highlightActiveLineGutter(),
-  highlightSpecialChars(),
-  history(),
-  foldGutter(),
-  drawSelection(),
-  dropCursor(),
-  EditorState.allowMultipleSelections.of(true),
-  indentOnInput(),
-  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-  bracketMatching(),
-  closeBrackets(),
-  autocompletion(),
-  rectangularSelection(),
-  crosshairCursor(),
-  highlightActiveLine(),
-  highlightSelectionMatches(),
-  keymap.of([
-    ...closeBracketsKeymap,
-    ...defaultKeymap,
-    ...searchKeymap,
-    ...historyKeymap,
-    ...foldKeymap,
-    ...completionKeymap,
-    ...lintKeymap
-  ])
-])();
 
 // node_modules/@lezer/lr/dist/index.js
 class Stack {
-  constructor(p, stack, state, reducePos, pos, score2, buffer, bufferBase, curContext, lookAhead = 0, parent) {
+  constructor(p, stack, state, reducePos, pos, score, buffer, bufferBase, curContext, lookAhead = 0, parent) {
     this.p = p;
     this.stack = stack;
     this.state = state;
     this.reducePos = reducePos;
     this.pos = pos;
-    this.score = score2;
+    this.score = score;
     this.buffer = buffer;
     this.bufferBase = bufferBase;
     this.curContext = curContext;
@@ -20621,16 +17458,16 @@ class Stack {
   }
   storeNode(term, start, end, size = 4, mustSink = false) {
     if (term == 0 && (!this.stack.length || this.stack[this.stack.length - 1] < this.buffer.length + this.bufferBase)) {
-      let cur2 = this, top2 = this.buffer.length;
-      if (top2 == 0 && cur2.parent) {
-        top2 = cur2.bufferBase - cur2.parent.bufferBase;
-        cur2 = cur2.parent;
+      let cur = this, top2 = this.buffer.length;
+      if (top2 == 0 && cur.parent) {
+        top2 = cur.bufferBase - cur.parent.bufferBase;
+        cur = cur.parent;
       }
-      if (top2 > 0 && cur2.buffer[top2 - 4] == 0 && cur2.buffer[top2 - 1] > -1) {
+      if (top2 > 0 && cur.buffer[top2 - 4] == 0 && cur.buffer[top2 - 1] > -1) {
         if (start == end)
           return;
-        if (cur2.buffer[top2 - 2] >= start) {
-          cur2.buffer[top2 - 2] = end;
+        if (cur.buffer[top2 - 2] >= start) {
+          cur.buffer[top2 - 2] = end;
           return;
         }
       }
@@ -21900,25 +18737,25 @@ class LRParser extends Parser {
     }
     return result;
   }
-  configure(config2) {
+  configure(config) {
     let copy = Object.assign(Object.create(LRParser.prototype), this);
-    if (config2.props)
-      copy.nodeSet = this.nodeSet.extend(...config2.props);
-    if (config2.top) {
-      let info = this.topRules[config2.top];
+    if (config.props)
+      copy.nodeSet = this.nodeSet.extend(...config.props);
+    if (config.top) {
+      let info = this.topRules[config.top];
       if (!info)
-        throw new RangeError(`Invalid top rule name ${config2.top}`);
+        throw new RangeError(`Invalid top rule name ${config.top}`);
       copy.top = info;
     }
-    if (config2.tokenizers)
+    if (config.tokenizers)
       copy.tokenizers = this.tokenizers.map((t2) => {
-        let found = config2.tokenizers.find((r) => r.from == t2);
+        let found = config.tokenizers.find((r) => r.from == t2);
         return found ? found.to : t2;
       });
-    if (config2.specializers) {
+    if (config.specializers) {
       copy.specializers = this.specializers.slice();
       copy.specializerSpecs = this.specializerSpecs.map((s, i2) => {
-        let found = config2.specializers.find((r) => r.from == s.external);
+        let found = config.specializers.find((r) => r.from == s.external);
         if (!found)
           return s;
         let spec = Object.assign(Object.assign({}, s), { external: found.to });
@@ -21926,16 +18763,16 @@ class LRParser extends Parser {
         return spec;
       });
     }
-    if (config2.contextTracker)
-      copy.context = config2.contextTracker;
-    if (config2.dialect)
-      copy.dialect = this.parseDialect(config2.dialect);
-    if (config2.strict != null)
-      copy.strict = config2.strict;
-    if (config2.wrap)
-      copy.wrappers = copy.wrappers.concat(config2.wrap);
-    if (config2.bufferLength != null)
-      copy.bufferLength = config2.bufferLength;
+    if (config.contextTracker)
+      copy.context = config.contextTracker;
+    if (config.dialect)
+      copy.dialect = this.parseDialect(config.dialect);
+    if (config.strict != null)
+      copy.strict = config.strict;
+    if (config.wrap)
+      copy.wrappers = copy.wrappers.concat(config.wrap);
+    if (config.bufferLength != null)
+      copy.bufferLength = config.bufferLength;
     return copy;
   }
   hasWrappers() {
@@ -22173,6 +19010,3169 @@ var cppLanguage = /* @__PURE__ */ LRLanguage.define({
 function cpp() {
   return new LanguageSupport(cppLanguage);
 }
+// node_modules/@codemirror/search/dist/index.js
+var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
+
+class SearchCursor {
+  constructor(text, query, from = 0, to = text.length, normalize, test) {
+    this.test = test;
+    this.value = { from: 0, to: 0 };
+    this.done = false;
+    this.matches = [];
+    this.buffer = "";
+    this.bufferPos = 0;
+    this.iter = text.iterRange(from, to);
+    this.bufferStart = from;
+    this.normalize = normalize ? (x) => normalize(basicNormalize(x)) : basicNormalize;
+    this.query = this.normalize(query);
+  }
+  peek() {
+    if (this.bufferPos == this.buffer.length) {
+      this.bufferStart += this.buffer.length;
+      this.iter.next();
+      if (this.iter.done)
+        return -1;
+      this.bufferPos = 0;
+      this.buffer = this.iter.value;
+    }
+    return codePointAt2(this.buffer, this.bufferPos);
+  }
+  next() {
+    while (this.matches.length)
+      this.matches.pop();
+    return this.nextOverlapping();
+  }
+  nextOverlapping() {
+    for (;; ) {
+      let next = this.peek();
+      if (next < 0) {
+        this.done = true;
+        return this;
+      }
+      let str = fromCodePoint(next), start = this.bufferStart + this.bufferPos;
+      this.bufferPos += codePointSize2(next);
+      let norm = this.normalize(str);
+      if (norm.length)
+        for (let i2 = 0, pos = start;; i2++) {
+          let code2 = norm.charCodeAt(i2);
+          let match = this.match(code2, pos, this.bufferPos + this.bufferStart);
+          if (i2 == norm.length - 1) {
+            if (match) {
+              this.value = match;
+              return this;
+            }
+            break;
+          }
+          if (pos == start && i2 < str.length && str.charCodeAt(i2) == code2)
+            pos++;
+        }
+    }
+  }
+  match(code2, pos, end) {
+    let match = null;
+    for (let i2 = 0;i2 < this.matches.length; i2 += 2) {
+      let index = this.matches[i2], keep = false;
+      if (this.query.charCodeAt(index) == code2) {
+        if (index == this.query.length - 1) {
+          match = { from: this.matches[i2 + 1], to: end };
+        } else {
+          this.matches[i2]++;
+          keep = true;
+        }
+      }
+      if (!keep) {
+        this.matches.splice(i2, 2);
+        i2 -= 2;
+      }
+    }
+    if (this.query.charCodeAt(0) == code2) {
+      if (this.query.length == 1)
+        match = { from: pos, to: end };
+      else
+        this.matches.push(1, pos);
+    }
+    if (match && this.test && !this.test(match.from, match.to, this.buffer, this.bufferStart))
+      match = null;
+    return match;
+  }
+}
+if (typeof Symbol != "undefined")
+  SearchCursor.prototype[Symbol.iterator] = function() {
+    return this;
+  };
+var empty = { from: -1, to: -1, match: /* @__PURE__ */ /.*/.exec("") };
+var baseFlags = "gm" + (/x/.unicode == null ? "" : "u");
+
+class RegExpCursor {
+  constructor(text, query, options, from = 0, to = text.length) {
+    this.text = text;
+    this.to = to;
+    this.curLine = "";
+    this.done = false;
+    this.value = empty;
+    if (/\\[sWDnr]|\n|\r|\[\^/.test(query))
+      return new MultilineRegExpCursor(text, query, options, from, to);
+    this.re = new RegExp(query, baseFlags + ((options === null || options === undefined ? undefined : options.ignoreCase) ? "i" : ""));
+    this.test = options === null || options === undefined ? undefined : options.test;
+    this.iter = text.iter();
+    let startLine = text.lineAt(from);
+    this.curLineStart = startLine.from;
+    this.matchPos = toCharEnd(text, from);
+    this.getLine(this.curLineStart);
+  }
+  getLine(skip) {
+    this.iter.next(skip);
+    if (this.iter.lineBreak) {
+      this.curLine = "";
+    } else {
+      this.curLine = this.iter.value;
+      if (this.curLineStart + this.curLine.length > this.to)
+        this.curLine = this.curLine.slice(0, this.to - this.curLineStart);
+      this.iter.next();
+    }
+  }
+  nextLine() {
+    this.curLineStart = this.curLineStart + this.curLine.length + 1;
+    if (this.curLineStart > this.to)
+      this.curLine = "";
+    else
+      this.getLine(0);
+  }
+  next() {
+    for (let off = this.matchPos - this.curLineStart;; ) {
+      this.re.lastIndex = off;
+      let match = this.matchPos <= this.to && this.re.exec(this.curLine);
+      if (match) {
+        let from = this.curLineStart + match.index, to = from + match[0].length;
+        this.matchPos = toCharEnd(this.text, to + (from == to ? 1 : 0));
+        if (from == this.curLineStart + this.curLine.length)
+          this.nextLine();
+        if ((from < to || from > this.value.to) && (!this.test || this.test(from, to, match))) {
+          this.value = { from, to, match };
+          return this;
+        }
+        off = this.matchPos - this.curLineStart;
+      } else if (this.curLineStart + this.curLine.length < this.to) {
+        this.nextLine();
+        off = 0;
+      } else {
+        this.done = true;
+        return this;
+      }
+    }
+  }
+}
+var flattened = /* @__PURE__ */ new WeakMap;
+
+class FlattenedDoc {
+  constructor(from, text) {
+    this.from = from;
+    this.text = text;
+  }
+  get to() {
+    return this.from + this.text.length;
+  }
+  static get(doc2, from, to) {
+    let cached = flattened.get(doc2);
+    if (!cached || cached.from >= to || cached.to <= from) {
+      let flat = new FlattenedDoc(from, doc2.sliceString(from, to));
+      flattened.set(doc2, flat);
+      return flat;
+    }
+    if (cached.from == from && cached.to == to)
+      return cached;
+    let { text, from: cachedFrom } = cached;
+    if (cachedFrom > from) {
+      text = doc2.sliceString(from, cachedFrom) + text;
+      cachedFrom = from;
+    }
+    if (cached.to < to)
+      text += doc2.sliceString(cached.to, to);
+    flattened.set(doc2, new FlattenedDoc(cachedFrom, text));
+    return new FlattenedDoc(from, text.slice(from - cachedFrom, to - cachedFrom));
+  }
+}
+
+class MultilineRegExpCursor {
+  constructor(text, query, options, from, to) {
+    this.text = text;
+    this.to = to;
+    this.done = false;
+    this.value = empty;
+    this.matchPos = toCharEnd(text, from);
+    this.re = new RegExp(query, baseFlags + ((options === null || options === undefined ? undefined : options.ignoreCase) ? "i" : ""));
+    this.test = options === null || options === undefined ? undefined : options.test;
+    this.flat = FlattenedDoc.get(text, from, this.chunkEnd(from + 5000));
+  }
+  chunkEnd(pos) {
+    return pos >= this.to ? this.to : this.text.lineAt(pos).to;
+  }
+  next() {
+    for (;; ) {
+      let off = this.re.lastIndex = this.matchPos - this.flat.from;
+      let match = this.re.exec(this.flat.text);
+      if (match && !match[0] && match.index == off) {
+        this.re.lastIndex = off + 1;
+        match = this.re.exec(this.flat.text);
+      }
+      if (match) {
+        let from = this.flat.from + match.index, to = from + match[0].length;
+        if ((this.flat.to >= this.to || match.index + match[0].length <= this.flat.text.length - 10) && (!this.test || this.test(from, to, match))) {
+          this.value = { from, to, match };
+          this.matchPos = toCharEnd(this.text, to + (from == to ? 1 : 0));
+          return this;
+        }
+      }
+      if (this.flat.to == this.to) {
+        this.done = true;
+        return this;
+      }
+      this.flat = FlattenedDoc.get(this.text, this.flat.from, this.chunkEnd(this.flat.from + this.flat.text.length * 2));
+    }
+  }
+}
+if (typeof Symbol != "undefined") {
+  RegExpCursor.prototype[Symbol.iterator] = MultilineRegExpCursor.prototype[Symbol.iterator] = function() {
+    return this;
+  };
+}
+function validRegExp(source) {
+  try {
+    new RegExp(source, baseFlags);
+    return true;
+  } catch (_a2) {
+    return false;
+  }
+}
+function toCharEnd(text, pos) {
+  if (pos >= text.length)
+    return pos;
+  let line = text.lineAt(pos), next;
+  while (pos < line.to && (next = line.text.charCodeAt(pos - line.from)) >= 56320 && next < 57344)
+    pos++;
+  return pos;
+}
+var gotoLine = (view) => {
+  let { state } = view;
+  let line = String(state.doc.lineAt(view.state.selection.main.head).number);
+  let { close, result } = showDialog(view, {
+    label: state.phrase("Go to line"),
+    input: { type: "text", name: "line", value: line },
+    focus: true,
+    submitLabel: state.phrase("go")
+  });
+  result.then((form) => {
+    let match = form && /^([+-])?(\d+)?(:\d+)?(%)?$/.exec(form.elements["line"].value);
+    if (!match) {
+      view.dispatch({ effects: close });
+      return;
+    }
+    let startLine = state.doc.lineAt(state.selection.main.head);
+    let [, sign, ln, cl, percent] = match;
+    let col = cl ? +cl.slice(1) : 0;
+    let line2 = ln ? +ln : startLine.number;
+    if (ln && percent) {
+      let pc = line2 / 100;
+      if (sign)
+        pc = pc * (sign == "-" ? -1 : 1) + startLine.number / state.doc.lines;
+      line2 = Math.round(state.doc.lines * pc);
+    } else if (ln && sign) {
+      line2 = line2 * (sign == "-" ? -1 : 1) + startLine.number;
+    }
+    let docLine = state.doc.line(Math.max(1, Math.min(state.doc.lines, line2)));
+    let selection = EditorSelection.cursor(docLine.from + Math.max(0, Math.min(col, docLine.length)));
+    view.dispatch({
+      effects: [close, EditorView.scrollIntoView(selection.from, { y: "center" })],
+      selection
+    });
+  });
+  return true;
+};
+var defaultHighlightOptions = {
+  highlightWordAroundCursor: false,
+  minSelectionLength: 1,
+  maxMatches: 100,
+  wholeWords: false
+};
+var highlightConfig = /* @__PURE__ */ Facet.define({
+  combine(options) {
+    return combineConfig(options, defaultHighlightOptions, {
+      highlightWordAroundCursor: (a2, b) => a2 || b,
+      minSelectionLength: Math.min,
+      maxMatches: Math.min
+    });
+  }
+});
+function highlightSelectionMatches(options) {
+  let ext = [defaultTheme, matchHighlighter];
+  if (options)
+    ext.push(highlightConfig.of(options));
+  return ext;
+}
+var matchDeco = /* @__PURE__ */ Decoration.mark({ class: "cm-selectionMatch" });
+var mainMatchDeco = /* @__PURE__ */ Decoration.mark({ class: "cm-selectionMatch cm-selectionMatch-main" });
+function insideWordBoundaries(check, state, from, to) {
+  return (from == 0 || check(state.sliceDoc(from - 1, from)) != CharCategory.Word) && (to == state.doc.length || check(state.sliceDoc(to, to + 1)) != CharCategory.Word);
+}
+function insideWord(check, state, from, to) {
+  return check(state.sliceDoc(from, from + 1)) == CharCategory.Word && check(state.sliceDoc(to - 1, to)) == CharCategory.Word;
+}
+var matchHighlighter = /* @__PURE__ */ ViewPlugin.fromClass(class {
+  constructor(view) {
+    this.decorations = this.getDeco(view);
+  }
+  update(update) {
+    if (update.selectionSet || update.docChanged || update.viewportChanged)
+      this.decorations = this.getDeco(update.view);
+  }
+  getDeco(view) {
+    let conf = view.state.facet(highlightConfig);
+    let { state } = view, sel = state.selection;
+    if (sel.ranges.length > 1)
+      return Decoration.none;
+    let range = sel.main, query, check = null;
+    if (range.empty) {
+      if (!conf.highlightWordAroundCursor)
+        return Decoration.none;
+      let word = state.wordAt(range.head);
+      if (!word)
+        return Decoration.none;
+      check = state.charCategorizer(range.head);
+      query = state.sliceDoc(word.from, word.to);
+    } else {
+      let len = range.to - range.from;
+      if (len < conf.minSelectionLength || len > 200)
+        return Decoration.none;
+      if (conf.wholeWords) {
+        query = state.sliceDoc(range.from, range.to);
+        check = state.charCategorizer(range.head);
+        if (!(insideWordBoundaries(check, state, range.from, range.to) && insideWord(check, state, range.from, range.to)))
+          return Decoration.none;
+      } else {
+        query = state.sliceDoc(range.from, range.to);
+        if (!query)
+          return Decoration.none;
+      }
+    }
+    let deco = [];
+    for (let part of view.visibleRanges) {
+      let cursor = new SearchCursor(state.doc, query, part.from, part.to);
+      while (!cursor.next().done) {
+        let { from, to } = cursor.value;
+        if (!check || insideWordBoundaries(check, state, from, to)) {
+          if (range.empty && from <= range.from && to >= range.to)
+            deco.push(mainMatchDeco.range(from, to));
+          else if (from >= range.to || to <= range.from)
+            deco.push(matchDeco.range(from, to));
+          if (deco.length > conf.maxMatches)
+            return Decoration.none;
+        }
+      }
+    }
+    return Decoration.set(deco);
+  }
+}, {
+  decorations: (v) => v.decorations
+});
+var defaultTheme = /* @__PURE__ */ EditorView.baseTheme({
+  ".cm-selectionMatch": { backgroundColor: "#99ff7780" },
+  ".cm-searchMatch .cm-selectionMatch": { backgroundColor: "transparent" }
+});
+var selectWord = ({ state, dispatch }) => {
+  let { selection } = state;
+  let newSel = EditorSelection.create(selection.ranges.map((range) => state.wordAt(range.head) || EditorSelection.cursor(range.head)), selection.mainIndex);
+  if (newSel.eq(selection))
+    return false;
+  dispatch(state.update({ selection: newSel }));
+  return true;
+};
+function findNextOccurrence(state, query) {
+  let { main, ranges } = state.selection;
+  let word = state.wordAt(main.head), fullWord = word && word.from == main.from && word.to == main.to;
+  for (let cycled = false, cursor = new SearchCursor(state.doc, query, ranges[ranges.length - 1].to);; ) {
+    cursor.next();
+    if (cursor.done) {
+      if (cycled)
+        return null;
+      cursor = new SearchCursor(state.doc, query, 0, Math.max(0, ranges[ranges.length - 1].from - 1));
+      cycled = true;
+    } else {
+      if (cycled && ranges.some((r) => r.from == cursor.value.from))
+        continue;
+      if (fullWord) {
+        let word2 = state.wordAt(cursor.value.from);
+        if (!word2 || word2.from != cursor.value.from || word2.to != cursor.value.to)
+          continue;
+      }
+      return cursor.value;
+    }
+  }
+}
+var selectNextOccurrence = ({ state, dispatch }) => {
+  let { ranges } = state.selection;
+  if (ranges.some((sel) => sel.from === sel.to))
+    return selectWord({ state, dispatch });
+  let searchedText = state.sliceDoc(ranges[0].from, ranges[0].to);
+  if (state.selection.ranges.some((r) => state.sliceDoc(r.from, r.to) != searchedText))
+    return false;
+  let range = findNextOccurrence(state, searchedText);
+  if (!range)
+    return false;
+  dispatch(state.update({
+    selection: state.selection.addRange(EditorSelection.range(range.from, range.to), false),
+    effects: EditorView.scrollIntoView(range.to)
+  }));
+  return true;
+};
+var searchConfigFacet = /* @__PURE__ */ Facet.define({
+  combine(configs) {
+    return combineConfig(configs, {
+      top: false,
+      caseSensitive: false,
+      literal: false,
+      regexp: false,
+      wholeWord: false,
+      createPanel: (view) => new SearchPanel(view),
+      scrollToMatch: (range) => EditorView.scrollIntoView(range)
+    });
+  }
+});
+class SearchQuery {
+  constructor(config) {
+    this.search = config.search;
+    this.caseSensitive = !!config.caseSensitive;
+    this.literal = !!config.literal;
+    this.regexp = !!config.regexp;
+    this.replace = config.replace || "";
+    this.valid = !!this.search && (!this.regexp || validRegExp(this.search));
+    this.unquoted = this.unquote(this.search);
+    this.wholeWord = !!config.wholeWord;
+    this.test = config.test;
+  }
+  unquote(text) {
+    return this.literal ? text : text.replace(/\\([nrt\\])/g, (_, ch) => ch == "n" ? `
+` : ch == "r" ? "\r" : ch == "t" ? "\t" : "\\");
+  }
+  eq(other) {
+    return this.search == other.search && this.replace == other.replace && this.caseSensitive == other.caseSensitive && this.regexp == other.regexp && this.wholeWord == other.wholeWord && this.test == other.test;
+  }
+  create() {
+    return this.regexp ? new RegExpQuery(this) : new StringQuery(this);
+  }
+  getCursor(state, from = 0, to) {
+    let st = state.doc ? state : EditorState.create({ doc: state });
+    if (to == null)
+      to = st.doc.length;
+    return this.regexp ? regexpCursor(this, st, from, to) : stringCursor(this, st, from, to);
+  }
+}
+
+class QueryType2 {
+  constructor(spec) {
+    this.spec = spec;
+  }
+}
+function wrapStringTest(test, state, inner) {
+  return (from, to, buffer, bufferPos) => {
+    if (inner && !inner(from, to, buffer, bufferPos))
+      return false;
+    let match = from >= bufferPos && to <= bufferPos + buffer.length ? buffer.slice(from - bufferPos, to - bufferPos) : state.doc.sliceString(from, to);
+    return test(match, state, from, to);
+  };
+}
+function stringCursor(spec, state, from, to) {
+  let test;
+  if (spec.wholeWord)
+    test = stringWordTest(state.doc, state.charCategorizer(state.selection.main.head));
+  if (spec.test)
+    test = wrapStringTest(spec.test, state, test);
+  return new SearchCursor(state.doc, spec.unquoted, from, to, spec.caseSensitive ? undefined : (x) => x.toLowerCase(), test);
+}
+function stringWordTest(doc2, categorizer) {
+  return (from, to, buf, bufPos) => {
+    if (bufPos > from || bufPos + buf.length < to) {
+      bufPos = Math.max(0, from - 2);
+      buf = doc2.sliceString(bufPos, Math.min(doc2.length, to + 2));
+    }
+    return (categorizer(charBefore(buf, from - bufPos)) != CharCategory.Word || categorizer(charAfter(buf, from - bufPos)) != CharCategory.Word) && (categorizer(charAfter(buf, to - bufPos)) != CharCategory.Word || categorizer(charBefore(buf, to - bufPos)) != CharCategory.Word);
+  };
+}
+
+class StringQuery extends QueryType2 {
+  constructor(spec) {
+    super(spec);
+  }
+  nextMatch(state, curFrom, curTo) {
+    let cursor = stringCursor(this.spec, state, curTo, state.doc.length).nextOverlapping();
+    if (cursor.done) {
+      let end = Math.min(state.doc.length, curFrom + this.spec.unquoted.length);
+      cursor = stringCursor(this.spec, state, 0, end).nextOverlapping();
+    }
+    return cursor.done || cursor.value.from == curFrom && cursor.value.to == curTo ? null : cursor.value;
+  }
+  prevMatchInRange(state, from, to) {
+    for (let pos = to;; ) {
+      let start = Math.max(from, pos - 1e4 - this.spec.unquoted.length);
+      let cursor = stringCursor(this.spec, state, start, pos), range = null;
+      while (!cursor.nextOverlapping().done)
+        range = cursor.value;
+      if (range)
+        return range;
+      if (start == from)
+        return null;
+      pos -= 1e4;
+    }
+  }
+  prevMatch(state, curFrom, curTo) {
+    let found = this.prevMatchInRange(state, 0, curFrom);
+    if (!found)
+      found = this.prevMatchInRange(state, Math.max(0, curTo - this.spec.unquoted.length), state.doc.length);
+    return found && (found.from != curFrom || found.to != curTo) ? found : null;
+  }
+  getReplacement(_result) {
+    return this.spec.unquote(this.spec.replace);
+  }
+  matchAll(state, limit) {
+    let cursor = stringCursor(this.spec, state, 0, state.doc.length), ranges = [];
+    while (!cursor.next().done) {
+      if (ranges.length >= limit)
+        return null;
+      ranges.push(cursor.value);
+    }
+    return ranges;
+  }
+  highlight(state, from, to, add2) {
+    let cursor = stringCursor(this.spec, state, Math.max(0, from - this.spec.unquoted.length), Math.min(to + this.spec.unquoted.length, state.doc.length));
+    while (!cursor.next().done)
+      add2(cursor.value.from, cursor.value.to);
+  }
+}
+function wrapRegexpTest(test, state, inner) {
+  return (from, to, match) => {
+    return (!inner || inner(from, to, match)) && test(match[0], state, from, to);
+  };
+}
+function regexpCursor(spec, state, from, to) {
+  let test;
+  if (spec.wholeWord)
+    test = regexpWordTest(state.charCategorizer(state.selection.main.head));
+  if (spec.test)
+    test = wrapRegexpTest(spec.test, state, test);
+  return new RegExpCursor(state.doc, spec.search, { ignoreCase: !spec.caseSensitive, test }, from, to);
+}
+function charBefore(str, index) {
+  return str.slice(findClusterBreak2(str, index, false), index);
+}
+function charAfter(str, index) {
+  return str.slice(index, findClusterBreak2(str, index));
+}
+function regexpWordTest(categorizer) {
+  return (_from, _to, match) => !match[0].length || (categorizer(charBefore(match.input, match.index)) != CharCategory.Word || categorizer(charAfter(match.input, match.index)) != CharCategory.Word) && (categorizer(charAfter(match.input, match.index + match[0].length)) != CharCategory.Word || categorizer(charBefore(match.input, match.index + match[0].length)) != CharCategory.Word);
+}
+
+class RegExpQuery extends QueryType2 {
+  nextMatch(state, curFrom, curTo) {
+    let cursor = regexpCursor(this.spec, state, curTo, state.doc.length).next();
+    if (cursor.done)
+      cursor = regexpCursor(this.spec, state, 0, curFrom).next();
+    return cursor.done ? null : cursor.value;
+  }
+  prevMatchInRange(state, from, to) {
+    for (let size = 1;; size++) {
+      let start = Math.max(from, to - size * 1e4);
+      let cursor = regexpCursor(this.spec, state, start, to), range = null;
+      while (!cursor.next().done)
+        range = cursor.value;
+      if (range && (start == from || range.from > start + 10))
+        return range;
+      if (start == from)
+        return null;
+    }
+  }
+  prevMatch(state, curFrom, curTo) {
+    return this.prevMatchInRange(state, 0, curFrom) || this.prevMatchInRange(state, curTo, state.doc.length);
+  }
+  getReplacement(result) {
+    return this.spec.unquote(this.spec.replace).replace(/\$([$&]|\d+)/g, (m, i2) => {
+      if (i2 == "&")
+        return result.match[0];
+      if (i2 == "$")
+        return "$";
+      for (let l = i2.length;l > 0; l--) {
+        let n = +i2.slice(0, l);
+        if (n > 0 && n < result.match.length)
+          return result.match[n] + i2.slice(l);
+      }
+      return m;
+    });
+  }
+  matchAll(state, limit) {
+    let cursor = regexpCursor(this.spec, state, 0, state.doc.length), ranges = [];
+    while (!cursor.next().done) {
+      if (ranges.length >= limit)
+        return null;
+      ranges.push(cursor.value);
+    }
+    return ranges;
+  }
+  highlight(state, from, to, add2) {
+    let cursor = regexpCursor(this.spec, state, Math.max(0, from - 250), Math.min(to + 250, state.doc.length));
+    while (!cursor.next().done)
+      add2(cursor.value.from, cursor.value.to);
+  }
+}
+var setSearchQuery = /* @__PURE__ */ StateEffect.define();
+var togglePanel = /* @__PURE__ */ StateEffect.define();
+var searchState = /* @__PURE__ */ StateField.define({
+  create(state) {
+    return new SearchState(defaultQuery(state).create(), null);
+  },
+  update(value, tr) {
+    for (let effect of tr.effects) {
+      if (effect.is(setSearchQuery))
+        value = new SearchState(effect.value.create(), value.panel);
+      else if (effect.is(togglePanel))
+        value = new SearchState(value.query, effect.value ? createSearchPanel : null);
+    }
+    return value;
+  },
+  provide: (f) => showPanel.from(f, (val) => val.panel)
+});
+class SearchState {
+  constructor(query, panel) {
+    this.query = query;
+    this.panel = panel;
+  }
+}
+var matchMark = /* @__PURE__ */ Decoration.mark({ class: "cm-searchMatch" });
+var selectedMatchMark = /* @__PURE__ */ Decoration.mark({ class: "cm-searchMatch cm-searchMatch-selected" });
+var searchHighlighter = /* @__PURE__ */ ViewPlugin.fromClass(class {
+  constructor(view) {
+    this.view = view;
+    this.decorations = this.highlight(view.state.field(searchState));
+  }
+  update(update) {
+    let state = update.state.field(searchState);
+    if (state != update.startState.field(searchState) || update.docChanged || update.selectionSet || update.viewportChanged)
+      this.decorations = this.highlight(state);
+  }
+  highlight({ query, panel }) {
+    if (!panel || !query.spec.valid)
+      return Decoration.none;
+    let { view } = this;
+    let builder = new RangeSetBuilder;
+    for (let i2 = 0, ranges = view.visibleRanges, l = ranges.length;i2 < l; i2++) {
+      let { from, to } = ranges[i2];
+      while (i2 < l - 1 && to > ranges[i2 + 1].from - 2 * 250)
+        to = ranges[++i2].to;
+      query.highlight(view.state, from, to, (from2, to2) => {
+        let selected = view.state.selection.ranges.some((r) => r.from == from2 && r.to == to2);
+        builder.add(from2, to2, selected ? selectedMatchMark : matchMark);
+      });
+    }
+    return builder.finish();
+  }
+}, {
+  decorations: (v) => v.decorations
+});
+function searchCommand(f) {
+  return (view) => {
+    let state = view.state.field(searchState, false);
+    return state && state.query.spec.valid ? f(view, state) : openSearchPanel(view);
+  };
+}
+var findNext = /* @__PURE__ */ searchCommand((view, { query }) => {
+  let { to } = view.state.selection.main;
+  let next = query.nextMatch(view.state, to, to);
+  if (!next)
+    return false;
+  let selection = EditorSelection.single(next.from, next.to);
+  let config = view.state.facet(searchConfigFacet);
+  view.dispatch({
+    selection,
+    effects: [announceMatch(view, next), config.scrollToMatch(selection.main, view)],
+    userEvent: "select.search"
+  });
+  selectSearchInput(view);
+  return true;
+});
+var findPrevious = /* @__PURE__ */ searchCommand((view, { query }) => {
+  let { state } = view, { from } = state.selection.main;
+  let prev = query.prevMatch(state, from, from);
+  if (!prev)
+    return false;
+  let selection = EditorSelection.single(prev.from, prev.to);
+  let config = view.state.facet(searchConfigFacet);
+  view.dispatch({
+    selection,
+    effects: [announceMatch(view, prev), config.scrollToMatch(selection.main, view)],
+    userEvent: "select.search"
+  });
+  selectSearchInput(view);
+  return true;
+});
+var selectMatches = /* @__PURE__ */ searchCommand((view, { query }) => {
+  let ranges = query.matchAll(view.state, 1000);
+  if (!ranges || !ranges.length)
+    return false;
+  view.dispatch({
+    selection: EditorSelection.create(ranges.map((r) => EditorSelection.range(r.from, r.to))),
+    userEvent: "select.search.matches"
+  });
+  return true;
+});
+var selectSelectionMatches = ({ state, dispatch }) => {
+  let sel = state.selection;
+  if (sel.ranges.length > 1 || sel.main.empty)
+    return false;
+  let { from, to } = sel.main;
+  let ranges = [], main = 0;
+  for (let cur = new SearchCursor(state.doc, state.sliceDoc(from, to));!cur.next().done; ) {
+    if (ranges.length > 1000)
+      return false;
+    if (cur.value.from == from)
+      main = ranges.length;
+    ranges.push(EditorSelection.range(cur.value.from, cur.value.to));
+  }
+  dispatch(state.update({
+    selection: EditorSelection.create(ranges, main),
+    userEvent: "select.search.matches"
+  }));
+  return true;
+};
+var replaceNext = /* @__PURE__ */ searchCommand((view, { query }) => {
+  let { state } = view, { from, to } = state.selection.main;
+  if (state.readOnly)
+    return false;
+  let match = query.nextMatch(state, from, from);
+  if (!match)
+    return false;
+  let next = match;
+  let changes = [], selection, replacement;
+  let effects = [];
+  if (next.from == from && next.to == to) {
+    replacement = state.toText(query.getReplacement(next));
+    changes.push({ from: next.from, to: next.to, insert: replacement });
+    next = query.nextMatch(state, next.from, next.to);
+    effects.push(EditorView.announce.of(state.phrase("replaced match on line $", state.doc.lineAt(from).number) + "."));
+  }
+  let changeSet = view.state.changes(changes);
+  if (next) {
+    selection = EditorSelection.single(next.from, next.to).map(changeSet);
+    effects.push(announceMatch(view, next));
+    effects.push(state.facet(searchConfigFacet).scrollToMatch(selection.main, view));
+  }
+  view.dispatch({
+    changes: changeSet,
+    selection,
+    effects,
+    userEvent: "input.replace"
+  });
+  return true;
+});
+var replaceAll = /* @__PURE__ */ searchCommand((view, { query }) => {
+  if (view.state.readOnly)
+    return false;
+  let changes = query.matchAll(view.state, 1e9).map((match) => {
+    let { from, to } = match;
+    return { from, to, insert: query.getReplacement(match) };
+  });
+  if (!changes.length)
+    return false;
+  let announceText = view.state.phrase("replaced $ matches", changes.length) + ".";
+  view.dispatch({
+    changes,
+    effects: EditorView.announce.of(announceText),
+    userEvent: "input.replace.all"
+  });
+  return true;
+});
+function createSearchPanel(view) {
+  return view.state.facet(searchConfigFacet).createPanel(view);
+}
+function defaultQuery(state, fallback2) {
+  var _a2, _b, _c, _d, _e;
+  let sel = state.selection.main;
+  let selText = sel.empty || sel.to > sel.from + 100 ? "" : state.sliceDoc(sel.from, sel.to);
+  if (fallback2 && !selText)
+    return fallback2;
+  let config = state.facet(searchConfigFacet);
+  return new SearchQuery({
+    search: ((_a2 = fallback2 === null || fallback2 === undefined ? undefined : fallback2.literal) !== null && _a2 !== undefined ? _a2 : config.literal) ? selText : selText.replace(/\n/g, "\\n"),
+    caseSensitive: (_b = fallback2 === null || fallback2 === undefined ? undefined : fallback2.caseSensitive) !== null && _b !== undefined ? _b : config.caseSensitive,
+    literal: (_c = fallback2 === null || fallback2 === undefined ? undefined : fallback2.literal) !== null && _c !== undefined ? _c : config.literal,
+    regexp: (_d = fallback2 === null || fallback2 === undefined ? undefined : fallback2.regexp) !== null && _d !== undefined ? _d : config.regexp,
+    wholeWord: (_e = fallback2 === null || fallback2 === undefined ? undefined : fallback2.wholeWord) !== null && _e !== undefined ? _e : config.wholeWord
+  });
+}
+function getSearchInput(view) {
+  let panel = getPanel(view, createSearchPanel);
+  return panel && panel.dom.querySelector("[main-field]");
+}
+function selectSearchInput(view) {
+  let input = getSearchInput(view);
+  if (input && input == view.root.activeElement)
+    input.select();
+}
+var openSearchPanel = (view) => {
+  let state = view.state.field(searchState, false);
+  if (state && state.panel) {
+    let searchInput = getSearchInput(view);
+    if (searchInput && searchInput != view.root.activeElement) {
+      let query = defaultQuery(view.state, state.query.spec);
+      if (query.valid)
+        view.dispatch({ effects: setSearchQuery.of(query) });
+      searchInput.focus();
+      searchInput.select();
+    }
+  } else {
+    view.dispatch({ effects: [
+      togglePanel.of(true),
+      state ? setSearchQuery.of(defaultQuery(view.state, state.query.spec)) : StateEffect.appendConfig.of(searchExtensions)
+    ] });
+  }
+  return true;
+};
+var closeSearchPanel = (view) => {
+  let state = view.state.field(searchState, false);
+  if (!state || !state.panel)
+    return false;
+  let panel = getPanel(view, createSearchPanel);
+  if (panel && panel.dom.contains(view.root.activeElement))
+    view.focus();
+  view.dispatch({ effects: togglePanel.of(false) });
+  return true;
+};
+var searchKeymap = [
+  { key: "Mod-f", run: openSearchPanel, scope: "editor search-panel" },
+  { key: "F3", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
+  { key: "Mod-g", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
+  { key: "Escape", run: closeSearchPanel, scope: "editor search-panel" },
+  { key: "Mod-Shift-l", run: selectSelectionMatches },
+  { key: "Mod-Alt-g", run: gotoLine },
+  { key: "Mod-d", run: selectNextOccurrence, preventDefault: true }
+];
+
+class SearchPanel {
+  constructor(view) {
+    this.view = view;
+    let query = this.query = view.state.field(searchState).query.spec;
+    this.commit = this.commit.bind(this);
+    this.searchField = crelt("input", {
+      value: query.search,
+      placeholder: phrase(view, "Find"),
+      "aria-label": phrase(view, "Find"),
+      class: "cm-textfield",
+      name: "search",
+      form: "",
+      "main-field": "true",
+      onchange: this.commit,
+      onkeyup: this.commit
+    });
+    this.replaceField = crelt("input", {
+      value: query.replace,
+      placeholder: phrase(view, "Replace"),
+      "aria-label": phrase(view, "Replace"),
+      class: "cm-textfield",
+      name: "replace",
+      form: "",
+      onchange: this.commit,
+      onkeyup: this.commit
+    });
+    this.caseField = crelt("input", {
+      type: "checkbox",
+      name: "case",
+      form: "",
+      checked: query.caseSensitive,
+      onchange: this.commit
+    });
+    this.reField = crelt("input", {
+      type: "checkbox",
+      name: "re",
+      form: "",
+      checked: query.regexp,
+      onchange: this.commit
+    });
+    this.wordField = crelt("input", {
+      type: "checkbox",
+      name: "word",
+      form: "",
+      checked: query.wholeWord,
+      onchange: this.commit
+    });
+    function button(name2, onclick, content2) {
+      return crelt("button", { class: "cm-button", name: name2, onclick, type: "button" }, content2);
+    }
+    this.dom = crelt("div", { onkeydown: (e) => this.keydown(e), class: "cm-search" }, [
+      this.searchField,
+      button("next", () => findNext(view), [phrase(view, "next")]),
+      button("prev", () => findPrevious(view), [phrase(view, "previous")]),
+      button("select", () => selectMatches(view), [phrase(view, "all")]),
+      crelt("label", null, [this.caseField, phrase(view, "match case")]),
+      crelt("label", null, [this.reField, phrase(view, "regexp")]),
+      crelt("label", null, [this.wordField, phrase(view, "by word")]),
+      ...view.state.readOnly ? [] : [
+        crelt("br"),
+        this.replaceField,
+        button("replace", () => replaceNext(view), [phrase(view, "replace")]),
+        button("replaceAll", () => replaceAll(view), [phrase(view, "replace all")])
+      ],
+      crelt("button", {
+        name: "close",
+        onclick: () => closeSearchPanel(view),
+        "aria-label": phrase(view, "close"),
+        type: "button"
+      }, ["×"])
+    ]);
+  }
+  commit() {
+    let query = new SearchQuery({
+      search: this.searchField.value,
+      caseSensitive: this.caseField.checked,
+      regexp: this.reField.checked,
+      wholeWord: this.wordField.checked,
+      replace: this.replaceField.value
+    });
+    if (!query.eq(this.query)) {
+      this.query = query;
+      this.view.dispatch({ effects: setSearchQuery.of(query) });
+    }
+  }
+  keydown(e) {
+    if (runScopeHandlers(this.view, e, "search-panel")) {
+      e.preventDefault();
+    } else if (e.keyCode == 13 && e.target == this.searchField) {
+      e.preventDefault();
+      (e.shiftKey ? findPrevious : findNext)(this.view);
+    } else if (e.keyCode == 13 && e.target == this.replaceField) {
+      e.preventDefault();
+      replaceNext(this.view);
+    }
+  }
+  update(update) {
+    for (let tr of update.transactions)
+      for (let effect of tr.effects) {
+        if (effect.is(setSearchQuery) && !effect.value.eq(this.query))
+          this.setQuery(effect.value);
+      }
+  }
+  setQuery(query) {
+    this.query = query;
+    this.searchField.value = query.search;
+    this.replaceField.value = query.replace;
+    this.caseField.checked = query.caseSensitive;
+    this.reField.checked = query.regexp;
+    this.wordField.checked = query.wholeWord;
+  }
+  mount() {
+    this.searchField.select();
+  }
+  get pos() {
+    return 80;
+  }
+  get top() {
+    return this.view.state.facet(searchConfigFacet).top;
+  }
+}
+function phrase(view, phrase2) {
+  return view.state.phrase(phrase2);
+}
+var AnnounceMargin = 30;
+var Break = /[\s\.,:;?!]/;
+function announceMatch(view, { from, to }) {
+  let line = view.state.doc.lineAt(from), lineEnd = view.state.doc.lineAt(to).to;
+  let start = Math.max(line.from, from - AnnounceMargin), end = Math.min(lineEnd, to + AnnounceMargin);
+  let text = view.state.sliceDoc(start, end);
+  if (start != line.from) {
+    for (let i2 = 0;i2 < AnnounceMargin; i2++)
+      if (!Break.test(text[i2 + 1]) && Break.test(text[i2])) {
+        text = text.slice(i2);
+        break;
+      }
+  }
+  if (end != lineEnd) {
+    for (let i2 = text.length - 1;i2 > text.length - AnnounceMargin; i2--)
+      if (!Break.test(text[i2 - 1]) && Break.test(text[i2])) {
+        text = text.slice(0, i2);
+        break;
+      }
+  }
+  return EditorView.announce.of(`${view.state.phrase("current match")}. ${text} ${view.state.phrase("on line")} ${line.number}.`);
+}
+var baseTheme3 = /* @__PURE__ */ EditorView.baseTheme({
+  ".cm-panel.cm-search": {
+    padding: "2px 6px 4px",
+    position: "relative",
+    "& [name=close]": {
+      position: "absolute",
+      top: "0",
+      right: "4px",
+      backgroundColor: "inherit",
+      border: "none",
+      font: "inherit",
+      padding: 0,
+      margin: 0
+    },
+    "& input, & button, & label": {
+      margin: ".2em .6em .2em 0"
+    },
+    "& input[type=checkbox]": {
+      marginRight: ".2em"
+    },
+    "& label": {
+      fontSize: "80%",
+      whiteSpace: "pre"
+    }
+  },
+  "&light .cm-searchMatch": { backgroundColor: "#ffff0054" },
+  "&dark .cm-searchMatch": { backgroundColor: "#00ffff8a" },
+  "&light .cm-searchMatch-selected": { backgroundColor: "#ff6a0054" },
+  "&dark .cm-searchMatch-selected": { backgroundColor: "#ff00ff8a" }
+});
+var searchExtensions = [
+  searchState,
+  /* @__PURE__ */ Prec.low(searchHighlighter),
+  baseTheme3
+];
+
+// node_modules/@codemirror/autocomplete/dist/index.js
+class CompletionContext {
+  constructor(state, pos, explicit, view) {
+    this.state = state;
+    this.pos = pos;
+    this.explicit = explicit;
+    this.view = view;
+    this.abortListeners = [];
+    this.abortOnDocChange = false;
+  }
+  tokenBefore(types2) {
+    let token = syntaxTree(this.state).resolveInner(this.pos, -1);
+    while (token && types2.indexOf(token.name) < 0)
+      token = token.parent;
+    return token ? {
+      from: token.from,
+      to: this.pos,
+      text: this.state.sliceDoc(token.from, this.pos),
+      type: token.type
+    } : null;
+  }
+  matchBefore(expr) {
+    let line = this.state.doc.lineAt(this.pos);
+    let start = Math.max(line.from, this.pos - 250);
+    let str = line.text.slice(start - line.from, this.pos - line.from);
+    let found = str.search(ensureAnchor(expr, false));
+    return found < 0 ? null : { from: start + found, to: this.pos, text: str.slice(found) };
+  }
+  get aborted() {
+    return this.abortListeners == null;
+  }
+  addEventListener(type, listener, options) {
+    if (type == "abort" && this.abortListeners) {
+      this.abortListeners.push(listener);
+      if (options && options.onDocChange)
+        this.abortOnDocChange = true;
+    }
+  }
+}
+function toSet(chars) {
+  let flat = Object.keys(chars).join("");
+  let words = /\w/.test(flat);
+  if (words)
+    flat = flat.replace(/\w/g, "");
+  return `[${words ? "\\w" : ""}${flat.replace(/[^\w\s]/g, "\\$&")}]`;
+}
+function prefixMatch(options) {
+  let first = Object.create(null), rest = Object.create(null);
+  for (let { label } of options) {
+    first[label[0]] = true;
+    for (let i2 = 1;i2 < label.length; i2++)
+      rest[label[i2]] = true;
+  }
+  let source = toSet(first) + toSet(rest) + "*$";
+  return [new RegExp("^" + source), new RegExp(source)];
+}
+function completeFromList(list) {
+  let options = list.map((o) => typeof o == "string" ? { label: o } : o);
+  let [validFor, match] = options.every((o) => /^\w+$/.test(o.label)) ? [/\w*$/, /\w+$/] : prefixMatch(options);
+  return (context) => {
+    let token = context.matchBefore(match);
+    return token || context.explicit ? { from: token ? token.from : context.pos, options, validFor } : null;
+  };
+}
+class Option {
+  constructor(completion, source, match, score) {
+    this.completion = completion;
+    this.source = source;
+    this.match = match;
+    this.score = score;
+  }
+}
+function cur(state) {
+  return state.selection.main.from;
+}
+function ensureAnchor(expr, start) {
+  var _a2;
+  let { source } = expr;
+  let addStart = start && source[0] != "^", addEnd = source[source.length - 1] != "$";
+  if (!addStart && !addEnd)
+    return expr;
+  return new RegExp(`${addStart ? "^" : ""}(?:${source})${addEnd ? "$" : ""}`, (_a2 = expr.flags) !== null && _a2 !== undefined ? _a2 : expr.ignoreCase ? "i" : "");
+}
+var pickedCompletion = /* @__PURE__ */ Annotation.define();
+function insertCompletionText(state, text, from, to) {
+  let { main } = state.selection, fromOff = from - main.from, toOff = to - main.from;
+  return {
+    ...state.changeByRange((range) => {
+      if (range != main && from != to && state.sliceDoc(range.from + fromOff, range.from + toOff) != state.sliceDoc(from, to))
+        return { range };
+      let lines = state.toText(text);
+      return {
+        changes: { from: range.from + fromOff, to: to == main.from ? range.to : range.from + toOff, insert: lines },
+        range: EditorSelection.cursor(range.from + fromOff + lines.length)
+      };
+    }),
+    scrollIntoView: true,
+    userEvent: "input.complete"
+  };
+}
+var SourceCache = /* @__PURE__ */ new WeakMap;
+function asSource(source) {
+  if (!Array.isArray(source))
+    return source;
+  let known = SourceCache.get(source);
+  if (!known)
+    SourceCache.set(source, known = completeFromList(source));
+  return known;
+}
+var startCompletionEffect = /* @__PURE__ */ StateEffect.define();
+var closeCompletionEffect = /* @__PURE__ */ StateEffect.define();
+
+class FuzzyMatcher {
+  constructor(pattern) {
+    this.pattern = pattern;
+    this.chars = [];
+    this.folded = [];
+    this.any = [];
+    this.precise = [];
+    this.byWord = [];
+    this.score = 0;
+    this.matched = [];
+    for (let p = 0;p < pattern.length; ) {
+      let char = codePointAt2(pattern, p), size = codePointSize2(char);
+      this.chars.push(char);
+      let part = pattern.slice(p, p + size), upper = part.toUpperCase();
+      this.folded.push(codePointAt2(upper == part ? part.toLowerCase() : upper, 0));
+      p += size;
+    }
+    this.astral = pattern.length != this.chars.length;
+  }
+  ret(score, matched) {
+    this.score = score;
+    this.matched = matched;
+    return this;
+  }
+  match(word) {
+    if (this.pattern.length == 0)
+      return this.ret(-100, []);
+    if (word.length < this.pattern.length)
+      return null;
+    let { chars, folded, any, precise, byWord } = this;
+    if (chars.length == 1) {
+      let first = codePointAt2(word, 0), firstSize = codePointSize2(first);
+      let score = firstSize == word.length ? 0 : -100;
+      if (first == chars[0])
+        ;
+      else if (first == folded[0])
+        score += -200;
+      else
+        return null;
+      return this.ret(score, [0, firstSize]);
+    }
+    let direct = word.indexOf(this.pattern);
+    if (direct == 0)
+      return this.ret(word.length == this.pattern.length ? 0 : -100, [0, this.pattern.length]);
+    let len = chars.length, anyTo = 0;
+    if (direct < 0) {
+      for (let i2 = 0, e = Math.min(word.length, 200);i2 < e && anyTo < len; ) {
+        let next = codePointAt2(word, i2);
+        if (next == chars[anyTo] || next == folded[anyTo])
+          any[anyTo++] = i2;
+        i2 += codePointSize2(next);
+      }
+      if (anyTo < len)
+        return null;
+    }
+    let preciseTo = 0;
+    let byWordTo = 0, byWordFolded = false;
+    let adjacentTo = 0, adjacentStart = -1, adjacentEnd = -1;
+    let hasLower = /[a-z]/.test(word), wordAdjacent = true;
+    for (let i2 = 0, e = Math.min(word.length, 200), prevType = 0;i2 < e && byWordTo < len; ) {
+      let next = codePointAt2(word, i2);
+      if (direct < 0) {
+        if (preciseTo < len && next == chars[preciseTo])
+          precise[preciseTo++] = i2;
+        if (adjacentTo < len) {
+          if (next == chars[adjacentTo] || next == folded[adjacentTo]) {
+            if (adjacentTo == 0)
+              adjacentStart = i2;
+            adjacentEnd = i2 + 1;
+            adjacentTo++;
+          } else {
+            adjacentTo = 0;
+          }
+        }
+      }
+      let ch, type = next < 255 ? next >= 48 && next <= 57 || next >= 97 && next <= 122 ? 2 : next >= 65 && next <= 90 ? 1 : 0 : (ch = fromCodePoint(next)) != ch.toLowerCase() ? 1 : ch != ch.toUpperCase() ? 2 : 0;
+      if (!i2 || type == 1 && hasLower || prevType == 0 && type != 0) {
+        if (chars[byWordTo] == next || folded[byWordTo] == next && (byWordFolded = true))
+          byWord[byWordTo++] = i2;
+        else if (byWord.length)
+          wordAdjacent = false;
+      }
+      prevType = type;
+      i2 += codePointSize2(next);
+    }
+    if (byWordTo == len && byWord[0] == 0 && wordAdjacent)
+      return this.result(-100 + (byWordFolded ? -200 : 0), byWord, word);
+    if (adjacentTo == len && adjacentStart == 0)
+      return this.ret(-200 - word.length + (adjacentEnd == word.length ? 0 : -100), [0, adjacentEnd]);
+    if (direct > -1)
+      return this.ret(-700 - word.length, [direct, direct + this.pattern.length]);
+    if (adjacentTo == len)
+      return this.ret(-200 + -700 - word.length, [adjacentStart, adjacentEnd]);
+    if (byWordTo == len)
+      return this.result(-100 + (byWordFolded ? -200 : 0) + -700 + (wordAdjacent ? 0 : -1100), byWord, word);
+    return chars.length == 2 ? null : this.result((any[0] ? -700 : 0) + -200 + -1100, any, word);
+  }
+  result(score, positions, word) {
+    let result = [], i2 = 0;
+    for (let pos of positions) {
+      let to = pos + (this.astral ? codePointSize2(codePointAt2(word, pos)) : 1);
+      if (i2 && result[i2 - 1] == pos)
+        result[i2 - 1] = to;
+      else {
+        result[i2++] = pos;
+        result[i2++] = to;
+      }
+    }
+    return this.ret(score - word.length, result);
+  }
+}
+
+class StrictMatcher {
+  constructor(pattern) {
+    this.pattern = pattern;
+    this.matched = [];
+    this.score = 0;
+    this.folded = pattern.toLowerCase();
+  }
+  match(word) {
+    if (word.length < this.pattern.length)
+      return null;
+    let start = word.slice(0, this.pattern.length);
+    let match = start == this.pattern ? 0 : start.toLowerCase() == this.folded ? -200 : null;
+    if (match == null)
+      return null;
+    this.matched = [0, start.length];
+    this.score = match + (word.length == this.pattern.length ? 0 : -100);
+    return this;
+  }
+}
+var completionConfig = /* @__PURE__ */ Facet.define({
+  combine(configs) {
+    return combineConfig(configs, {
+      activateOnTyping: true,
+      activateOnCompletion: () => false,
+      activateOnTypingDelay: 100,
+      selectOnOpen: true,
+      override: null,
+      closeOnBlur: true,
+      maxRenderedOptions: 100,
+      defaultKeymap: true,
+      tooltipClass: () => "",
+      optionClass: () => "",
+      aboveCursor: false,
+      icons: true,
+      addToOptions: [],
+      positionInfo: defaultPositionInfo,
+      filterStrict: false,
+      compareCompletions: (a2, b) => (a2.sortText || a2.label).localeCompare(b.sortText || b.label),
+      interactionDelay: 75,
+      updateSyncTime: 100
+    }, {
+      defaultKeymap: (a2, b) => a2 && b,
+      closeOnBlur: (a2, b) => a2 && b,
+      icons: (a2, b) => a2 && b,
+      tooltipClass: (a2, b) => (c) => joinClass(a2(c), b(c)),
+      optionClass: (a2, b) => (c) => joinClass(a2(c), b(c)),
+      addToOptions: (a2, b) => a2.concat(b),
+      filterStrict: (a2, b) => a2 || b
+    });
+  }
+});
+function joinClass(a2, b) {
+  return a2 ? b ? a2 + " " + b : a2 : b;
+}
+function defaultPositionInfo(view, list, option, info, space, tooltip) {
+  let rtl = view.textDirection == Direction.RTL, left = rtl, narrow = false;
+  let side = "top", offset, maxWidth;
+  let spaceLeft = list.left - space.left, spaceRight = space.right - list.right;
+  let infoWidth = info.right - info.left, infoHeight = info.bottom - info.top;
+  if (left && spaceLeft < Math.min(infoWidth, spaceRight))
+    left = false;
+  else if (!left && spaceRight < Math.min(infoWidth, spaceLeft))
+    left = true;
+  if (infoWidth <= (left ? spaceLeft : spaceRight)) {
+    offset = Math.max(space.top, Math.min(option.top, space.bottom - infoHeight)) - list.top;
+    maxWidth = Math.min(400, left ? spaceLeft : spaceRight);
+  } else {
+    narrow = true;
+    maxWidth = Math.min(400, (rtl ? list.right : space.right - list.left) - 30);
+    let spaceBelow = space.bottom - list.bottom;
+    if (spaceBelow >= infoHeight || spaceBelow > list.top) {
+      offset = option.bottom - list.top;
+    } else {
+      side = "bottom";
+      offset = list.bottom - option.top;
+    }
+  }
+  let scaleY = (list.bottom - list.top) / tooltip.offsetHeight;
+  let scaleX = (list.right - list.left) / tooltip.offsetWidth;
+  return {
+    style: `${side}: ${offset / scaleY}px; max-width: ${maxWidth / scaleX}px`,
+    class: "cm-completionInfo-" + (narrow ? rtl ? "left-narrow" : "right-narrow" : left ? "left" : "right")
+  };
+}
+function optionContent(config) {
+  let content2 = config.addToOptions.slice();
+  if (config.icons)
+    content2.push({
+      render(completion) {
+        let icon = document.createElement("div");
+        icon.classList.add("cm-completionIcon");
+        if (completion.type)
+          icon.classList.add(...completion.type.split(/\s+/g).map((cls) => "cm-completionIcon-" + cls));
+        icon.setAttribute("aria-hidden", "true");
+        return icon;
+      },
+      position: 20
+    });
+  content2.push({
+    render(completion, _s, _v, match) {
+      let labelElt = document.createElement("span");
+      labelElt.className = "cm-completionLabel";
+      let label = completion.displayLabel || completion.label, off = 0;
+      for (let j = 0;j < match.length; ) {
+        let from = match[j++], to = match[j++];
+        if (from > off)
+          labelElt.appendChild(document.createTextNode(label.slice(off, from)));
+        let span = labelElt.appendChild(document.createElement("span"));
+        span.appendChild(document.createTextNode(label.slice(from, to)));
+        span.className = "cm-completionMatchedText";
+        off = to;
+      }
+      if (off < label.length)
+        labelElt.appendChild(document.createTextNode(label.slice(off)));
+      return labelElt;
+    },
+    position: 50
+  }, {
+    render(completion) {
+      if (!completion.detail)
+        return null;
+      let detailElt = document.createElement("span");
+      detailElt.className = "cm-completionDetail";
+      detailElt.textContent = completion.detail;
+      return detailElt;
+    },
+    position: 80
+  });
+  return content2.sort((a2, b) => a2.position - b.position).map((a2) => a2.render);
+}
+function rangeAroundSelected(total, selected, max) {
+  if (total <= max)
+    return { from: 0, to: total };
+  if (selected < 0)
+    selected = 0;
+  if (selected <= total >> 1) {
+    let off2 = Math.floor(selected / max);
+    return { from: off2 * max, to: (off2 + 1) * max };
+  }
+  let off = Math.floor((total - selected) / max);
+  return { from: total - (off + 1) * max, to: total - off * max };
+}
+
+class CompletionTooltip {
+  constructor(view, stateField, applyCompletion) {
+    this.view = view;
+    this.stateField = stateField;
+    this.applyCompletion = applyCompletion;
+    this.info = null;
+    this.infoDestroy = null;
+    this.placeInfoReq = {
+      read: () => this.measureInfo(),
+      write: (pos) => this.placeInfo(pos),
+      key: this
+    };
+    this.space = null;
+    this.currentClass = "";
+    let cState = view.state.field(stateField);
+    let { options, selected } = cState.open;
+    let config = view.state.facet(completionConfig);
+    this.optionContent = optionContent(config);
+    this.optionClass = config.optionClass;
+    this.tooltipClass = config.tooltipClass;
+    this.range = rangeAroundSelected(options.length, selected, config.maxRenderedOptions);
+    this.dom = document.createElement("div");
+    this.dom.className = "cm-tooltip-autocomplete";
+    this.updateTooltipClass(view.state);
+    this.dom.addEventListener("mousedown", (e) => {
+      let { options: options2 } = view.state.field(stateField).open;
+      for (let dom = e.target, match;dom && dom != this.dom; dom = dom.parentNode) {
+        if (dom.nodeName == "LI" && (match = /-(\d+)$/.exec(dom.id)) && +match[1] < options2.length) {
+          this.applyCompletion(view, options2[+match[1]]);
+          e.preventDefault();
+          return;
+        }
+      }
+    });
+    this.dom.addEventListener("focusout", (e) => {
+      let state = view.state.field(this.stateField, false);
+      if (state && state.tooltip && view.state.facet(completionConfig).closeOnBlur && e.relatedTarget != view.contentDOM)
+        view.dispatch({ effects: closeCompletionEffect.of(null) });
+    });
+    this.showOptions(options, cState.id);
+  }
+  mount() {
+    this.updateSel();
+  }
+  showOptions(options, id) {
+    if (this.list)
+      this.list.remove();
+    this.list = this.dom.appendChild(this.createListBox(options, id, this.range));
+    this.list.addEventListener("scroll", () => {
+      if (this.info)
+        this.view.requestMeasure(this.placeInfoReq);
+    });
+  }
+  update(update) {
+    var _a2;
+    let cState = update.state.field(this.stateField);
+    let prevState = update.startState.field(this.stateField);
+    this.updateTooltipClass(update.state);
+    if (cState != prevState) {
+      let { options, selected, disabled } = cState.open;
+      if (!prevState.open || prevState.open.options != options) {
+        this.range = rangeAroundSelected(options.length, selected, update.state.facet(completionConfig).maxRenderedOptions);
+        this.showOptions(options, cState.id);
+      }
+      this.updateSel();
+      if (disabled != ((_a2 = prevState.open) === null || _a2 === undefined ? undefined : _a2.disabled))
+        this.dom.classList.toggle("cm-tooltip-autocomplete-disabled", !!disabled);
+    }
+  }
+  updateTooltipClass(state) {
+    let cls = this.tooltipClass(state);
+    if (cls != this.currentClass) {
+      for (let c of this.currentClass.split(" "))
+        if (c)
+          this.dom.classList.remove(c);
+      for (let c of cls.split(" "))
+        if (c)
+          this.dom.classList.add(c);
+      this.currentClass = cls;
+    }
+  }
+  positioned(space) {
+    this.space = space;
+    if (this.info)
+      this.view.requestMeasure(this.placeInfoReq);
+  }
+  updateSel() {
+    let cState = this.view.state.field(this.stateField), open = cState.open;
+    if (open.selected > -1 && open.selected < this.range.from || open.selected >= this.range.to) {
+      this.range = rangeAroundSelected(open.options.length, open.selected, this.view.state.facet(completionConfig).maxRenderedOptions);
+      this.showOptions(open.options, cState.id);
+    }
+    let newSel = this.updateSelectedOption(open.selected);
+    if (newSel) {
+      this.destroyInfo();
+      let { completion } = open.options[open.selected];
+      let { info } = completion;
+      if (!info)
+        return;
+      let infoResult = typeof info === "string" ? document.createTextNode(info) : info(completion);
+      if (!infoResult)
+        return;
+      if ("then" in infoResult) {
+        infoResult.then((obj) => {
+          if (obj && this.view.state.field(this.stateField, false) == cState)
+            this.addInfoPane(obj, completion);
+        }).catch((e) => logException(this.view.state, e, "completion info"));
+      } else {
+        this.addInfoPane(infoResult, completion);
+        newSel.setAttribute("aria-describedby", this.info.id);
+      }
+    }
+  }
+  addInfoPane(content2, completion) {
+    this.destroyInfo();
+    let wrap = this.info = document.createElement("div");
+    wrap.className = "cm-tooltip cm-completionInfo";
+    wrap.id = "cm-completionInfo-" + Math.floor(Math.random() * 65535).toString(16);
+    if (content2.nodeType != null) {
+      wrap.appendChild(content2);
+      this.infoDestroy = null;
+    } else {
+      let { dom, destroy } = content2;
+      wrap.appendChild(dom);
+      this.infoDestroy = destroy || null;
+    }
+    this.dom.appendChild(wrap);
+    this.view.requestMeasure(this.placeInfoReq);
+  }
+  updateSelectedOption(selected) {
+    let set = null;
+    for (let opt = this.list.firstChild, i2 = this.range.from;opt; opt = opt.nextSibling, i2++) {
+      if (opt.nodeName != "LI" || !opt.id) {
+        i2--;
+      } else if (i2 == selected) {
+        if (!opt.hasAttribute("aria-selected")) {
+          opt.setAttribute("aria-selected", "true");
+          set = opt;
+        }
+      } else {
+        if (opt.hasAttribute("aria-selected")) {
+          opt.removeAttribute("aria-selected");
+          opt.removeAttribute("aria-describedby");
+        }
+      }
+    }
+    if (set)
+      scrollIntoView2(this.list, set);
+    return set;
+  }
+  measureInfo() {
+    let sel = this.dom.querySelector("[aria-selected]");
+    if (!sel || !this.info)
+      return null;
+    let listRect = this.dom.getBoundingClientRect();
+    let infoRect = this.info.getBoundingClientRect();
+    let selRect = sel.getBoundingClientRect();
+    let space = this.space;
+    if (!space) {
+      let docElt = this.dom.ownerDocument.documentElement;
+      space = { left: 0, top: 0, right: docElt.clientWidth, bottom: docElt.clientHeight };
+    }
+    if (selRect.top > Math.min(space.bottom, listRect.bottom) - 10 || selRect.bottom < Math.max(space.top, listRect.top) + 10)
+      return null;
+    return this.view.state.facet(completionConfig).positionInfo(this.view, listRect, selRect, infoRect, space, this.dom);
+  }
+  placeInfo(pos) {
+    if (this.info) {
+      if (pos) {
+        if (pos.style)
+          this.info.style.cssText = pos.style;
+        this.info.className = "cm-tooltip cm-completionInfo " + (pos.class || "");
+      } else {
+        this.info.style.cssText = "top: -1e6px";
+      }
+    }
+  }
+  createListBox(options, id, range) {
+    const ul = document.createElement("ul");
+    ul.id = id;
+    ul.setAttribute("role", "listbox");
+    ul.setAttribute("aria-expanded", "true");
+    ul.setAttribute("aria-label", this.view.state.phrase("Completions"));
+    ul.addEventListener("mousedown", (e) => {
+      if (e.target == ul)
+        e.preventDefault();
+    });
+    let curSection = null;
+    for (let i2 = range.from;i2 < range.to; i2++) {
+      let { completion, match } = options[i2], { section } = completion;
+      if (section) {
+        let name2 = typeof section == "string" ? section : section.name;
+        if (name2 != curSection && (i2 > range.from || range.from == 0)) {
+          curSection = name2;
+          if (typeof section != "string" && section.header) {
+            ul.appendChild(section.header(section));
+          } else {
+            let header = ul.appendChild(document.createElement("completion-section"));
+            header.textContent = name2;
+          }
+        }
+      }
+      const li = ul.appendChild(document.createElement("li"));
+      li.id = id + "-" + i2;
+      li.setAttribute("role", "option");
+      let cls = this.optionClass(completion);
+      if (cls)
+        li.className = cls;
+      for (let source of this.optionContent) {
+        let node = source(completion, this.view.state, this.view, match);
+        if (node)
+          li.appendChild(node);
+      }
+    }
+    if (range.from)
+      ul.classList.add("cm-completionListIncompleteTop");
+    if (range.to < options.length)
+      ul.classList.add("cm-completionListIncompleteBottom");
+    return ul;
+  }
+  destroyInfo() {
+    if (this.info) {
+      if (this.infoDestroy)
+        this.infoDestroy();
+      this.info.remove();
+      this.info = null;
+    }
+  }
+  destroy() {
+    this.destroyInfo();
+  }
+}
+function completionTooltip(stateField, applyCompletion) {
+  return (view) => new CompletionTooltip(view, stateField, applyCompletion);
+}
+function scrollIntoView2(container, element) {
+  let parent = container.getBoundingClientRect();
+  let self = element.getBoundingClientRect();
+  let scaleY = parent.height / container.offsetHeight;
+  if (self.top < parent.top)
+    container.scrollTop -= (parent.top - self.top) / scaleY;
+  else if (self.bottom > parent.bottom)
+    container.scrollTop += (self.bottom - parent.bottom) / scaleY;
+}
+function score(option) {
+  return (option.boost || 0) * 100 + (option.apply ? 10 : 0) + (option.info ? 5 : 0) + (option.type ? 1 : 0);
+}
+function sortOptions(active, state) {
+  let options = [];
+  let sections = null, dynamicSectionScore = null;
+  let addOption = (option) => {
+    options.push(option);
+    let { section } = option.completion;
+    if (section) {
+      if (!sections)
+        sections = [];
+      let name2 = typeof section == "string" ? section : section.name;
+      if (!sections.some((s) => s.name == name2))
+        sections.push(typeof section == "string" ? { name: name2 } : section);
+    }
+  };
+  let conf = state.facet(completionConfig);
+  for (let a2 of active)
+    if (a2.hasResult()) {
+      let getMatch = a2.result.getMatch;
+      if (a2.result.filter === false) {
+        for (let option of a2.result.options) {
+          addOption(new Option(option, a2.source, getMatch ? getMatch(option) : [], 1e9 - options.length));
+        }
+      } else {
+        let pattern = state.sliceDoc(a2.from, a2.to), match;
+        let matcher = conf.filterStrict ? new StrictMatcher(pattern) : new FuzzyMatcher(pattern);
+        for (let option of a2.result.options)
+          if (match = matcher.match(option.label)) {
+            let matched = !option.displayLabel ? match.matched : getMatch ? getMatch(option, match.matched) : [];
+            let score2 = match.score + (option.boost || 0);
+            addOption(new Option(option, a2.source, matched, score2));
+            if (typeof option.section == "object" && option.section.rank === "dynamic") {
+              let { name: name2 } = option.section;
+              if (!dynamicSectionScore)
+                dynamicSectionScore = Object.create(null);
+              dynamicSectionScore[name2] = Math.max(score2, dynamicSectionScore[name2] || -1e9);
+            }
+          }
+      }
+    }
+  if (sections) {
+    let sectionOrder = Object.create(null), pos = 0;
+    let cmp = (a2, b) => {
+      return (a2.rank === "dynamic" && b.rank === "dynamic" ? dynamicSectionScore[b.name] - dynamicSectionScore[a2.name] : 0) || (typeof a2.rank == "number" ? a2.rank : 1e9) - (typeof b.rank == "number" ? b.rank : 1e9) || (a2.name < b.name ? -1 : 1);
+    };
+    for (let s of sections.sort(cmp)) {
+      pos -= 1e5;
+      sectionOrder[s.name] = pos;
+    }
+    for (let option of options) {
+      let { section } = option.completion;
+      if (section)
+        option.score += sectionOrder[typeof section == "string" ? section : section.name];
+    }
+  }
+  let result = [], prev = null;
+  let compare2 = conf.compareCompletions;
+  for (let opt of options.sort((a2, b) => b.score - a2.score || compare2(a2.completion, b.completion))) {
+    let cur2 = opt.completion;
+    if (!prev || prev.label != cur2.label || prev.detail != cur2.detail || prev.type != null && cur2.type != null && prev.type != cur2.type || prev.apply != cur2.apply || prev.boost != cur2.boost)
+      result.push(opt);
+    else if (score(opt.completion) > score(prev))
+      result[result.length - 1] = opt;
+    prev = opt.completion;
+  }
+  return result;
+}
+
+class CompletionDialog {
+  constructor(options, attrs, tooltip, timestamp, selected, disabled) {
+    this.options = options;
+    this.attrs = attrs;
+    this.tooltip = tooltip;
+    this.timestamp = timestamp;
+    this.selected = selected;
+    this.disabled = disabled;
+  }
+  setSelected(selected, id) {
+    return selected == this.selected || selected >= this.options.length ? this : new CompletionDialog(this.options, makeAttrs(id, selected), this.tooltip, this.timestamp, selected, this.disabled);
+  }
+  static build(active, state, id, prev, conf, didSetActive) {
+    if (prev && !didSetActive && active.some((s) => s.isPending))
+      return prev.setDisabled();
+    let options = sortOptions(active, state);
+    if (!options.length)
+      return prev && active.some((a2) => a2.isPending) ? prev.setDisabled() : null;
+    let selected = state.facet(completionConfig).selectOnOpen ? 0 : -1;
+    if (prev && prev.selected != selected && prev.selected != -1) {
+      let selectedValue = prev.options[prev.selected].completion;
+      for (let i2 = 0;i2 < options.length; i2++)
+        if (options[i2].completion == selectedValue) {
+          selected = i2;
+          break;
+        }
+    }
+    return new CompletionDialog(options, makeAttrs(id, selected), {
+      pos: active.reduce((a2, b) => b.hasResult() ? Math.min(a2, b.from) : a2, 1e8),
+      create: createTooltip,
+      above: conf.aboveCursor
+    }, prev ? prev.timestamp : Date.now(), selected, false);
+  }
+  map(changes) {
+    return new CompletionDialog(this.options, this.attrs, { ...this.tooltip, pos: changes.mapPos(this.tooltip.pos) }, this.timestamp, this.selected, this.disabled);
+  }
+  setDisabled() {
+    return new CompletionDialog(this.options, this.attrs, this.tooltip, this.timestamp, this.selected, true);
+  }
+}
+
+class CompletionState {
+  constructor(active, id, open) {
+    this.active = active;
+    this.id = id;
+    this.open = open;
+  }
+  static start() {
+    return new CompletionState(none3, "cm-ac-" + Math.floor(Math.random() * 2000000).toString(36), null);
+  }
+  update(tr) {
+    let { state } = tr, conf = state.facet(completionConfig);
+    let sources = conf.override || state.languageDataAt("autocomplete", cur(state)).map(asSource);
+    let active = sources.map((source) => {
+      let value = this.active.find((s) => s.source == source) || new ActiveSource(source, this.active.some((a2) => a2.state != 0) ? 1 : 0);
+      return value.update(tr, conf);
+    });
+    if (active.length == this.active.length && active.every((a2, i2) => a2 == this.active[i2]))
+      active = this.active;
+    let open = this.open, didSet = tr.effects.some((e) => e.is(setActiveEffect));
+    if (open && tr.docChanged)
+      open = open.map(tr.changes);
+    if (tr.selection || active.some((a2) => a2.hasResult() && tr.changes.touchesRange(a2.from, a2.to)) || !sameResults(active, this.active) || didSet)
+      open = CompletionDialog.build(active, state, this.id, open, conf, didSet);
+    else if (open && open.disabled && !active.some((a2) => a2.isPending))
+      open = null;
+    if (!open && active.every((a2) => !a2.isPending) && active.some((a2) => a2.hasResult()))
+      active = active.map((a2) => a2.hasResult() ? new ActiveSource(a2.source, 0) : a2);
+    for (let effect of tr.effects)
+      if (effect.is(setSelectedEffect))
+        open = open && open.setSelected(effect.value, this.id);
+    return active == this.active && open == this.open ? this : new CompletionState(active, this.id, open);
+  }
+  get tooltip() {
+    return this.open ? this.open.tooltip : null;
+  }
+  get attrs() {
+    return this.open ? this.open.attrs : this.active.length ? baseAttrs : noAttrs2;
+  }
+}
+function sameResults(a2, b) {
+  if (a2 == b)
+    return true;
+  for (let iA = 0, iB = 0;; ) {
+    while (iA < a2.length && !a2[iA].hasResult())
+      iA++;
+    while (iB < b.length && !b[iB].hasResult())
+      iB++;
+    let endA = iA == a2.length, endB = iB == b.length;
+    if (endA || endB)
+      return endA == endB;
+    if (a2[iA++].result != b[iB++].result)
+      return false;
+  }
+}
+var baseAttrs = {
+  "aria-autocomplete": "list"
+};
+var noAttrs2 = {};
+function makeAttrs(id, selected) {
+  let result = {
+    "aria-autocomplete": "list",
+    "aria-haspopup": "listbox",
+    "aria-controls": id
+  };
+  if (selected > -1)
+    result["aria-activedescendant"] = id + "-" + selected;
+  return result;
+}
+var none3 = [];
+function getUpdateType(tr, conf) {
+  if (tr.isUserEvent("input.complete")) {
+    let completion = tr.annotation(pickedCompletion);
+    if (completion && conf.activateOnCompletion(completion))
+      return 4 | 8;
+  }
+  let typing = tr.isUserEvent("input.type");
+  return typing && conf.activateOnTyping ? 4 | 1 : typing ? 1 : tr.isUserEvent("delete.backward") ? 2 : tr.selection ? 8 : tr.docChanged ? 16 : 0;
+}
+
+class ActiveSource {
+  constructor(source, state, explicit = false) {
+    this.source = source;
+    this.state = state;
+    this.explicit = explicit;
+  }
+  hasResult() {
+    return false;
+  }
+  get isPending() {
+    return this.state == 1;
+  }
+  update(tr, conf) {
+    let type = getUpdateType(tr, conf), value = this;
+    if (type & 8 || type & 16 && this.touches(tr))
+      value = new ActiveSource(value.source, 0);
+    if (type & 4 && value.state == 0)
+      value = new ActiveSource(this.source, 1);
+    value = value.updateFor(tr, type);
+    for (let effect of tr.effects) {
+      if (effect.is(startCompletionEffect))
+        value = new ActiveSource(value.source, 1, effect.value);
+      else if (effect.is(closeCompletionEffect))
+        value = new ActiveSource(value.source, 0);
+      else if (effect.is(setActiveEffect)) {
+        for (let active of effect.value)
+          if (active.source == value.source)
+            value = active;
+      }
+    }
+    return value;
+  }
+  updateFor(tr, type) {
+    return this.map(tr.changes);
+  }
+  map(changes) {
+    return this;
+  }
+  touches(tr) {
+    return tr.changes.touchesRange(cur(tr.state));
+  }
+}
+
+class ActiveResult extends ActiveSource {
+  constructor(source, explicit, limit, result, from, to) {
+    super(source, 3, explicit);
+    this.limit = limit;
+    this.result = result;
+    this.from = from;
+    this.to = to;
+  }
+  hasResult() {
+    return true;
+  }
+  updateFor(tr, type) {
+    var _a2;
+    if (!(type & 3))
+      return this.map(tr.changes);
+    let result = this.result;
+    if (result.map && !tr.changes.empty)
+      result = result.map(result, tr.changes);
+    let from = tr.changes.mapPos(this.from), to = tr.changes.mapPos(this.to, 1);
+    let pos = cur(tr.state);
+    if (pos > to || !result || type & 2 && (cur(tr.startState) == this.from || pos < this.limit))
+      return new ActiveSource(this.source, type & 4 ? 1 : 0);
+    let limit = tr.changes.mapPos(this.limit);
+    if (checkValid(result.validFor, tr.state, from, to))
+      return new ActiveResult(this.source, this.explicit, limit, result, from, to);
+    if (result.update && (result = result.update(result, from, to, new CompletionContext(tr.state, pos, false))))
+      return new ActiveResult(this.source, this.explicit, limit, result, result.from, (_a2 = result.to) !== null && _a2 !== undefined ? _a2 : cur(tr.state));
+    return new ActiveSource(this.source, 1, this.explicit);
+  }
+  map(mapping) {
+    if (mapping.empty)
+      return this;
+    let result = this.result.map ? this.result.map(this.result, mapping) : this.result;
+    if (!result)
+      return new ActiveSource(this.source, 0);
+    return new ActiveResult(this.source, this.explicit, mapping.mapPos(this.limit), this.result, mapping.mapPos(this.from), mapping.mapPos(this.to, 1));
+  }
+  touches(tr) {
+    return tr.changes.touchesRange(this.from, this.to);
+  }
+}
+function checkValid(validFor, state, from, to) {
+  if (!validFor)
+    return false;
+  let text = state.sliceDoc(from, to);
+  return typeof validFor == "function" ? validFor(text, from, to, state) : ensureAnchor(validFor, true).test(text);
+}
+var setActiveEffect = /* @__PURE__ */ StateEffect.define({
+  map(sources, mapping) {
+    return sources.map((s) => s.map(mapping));
+  }
+});
+var setSelectedEffect = /* @__PURE__ */ StateEffect.define();
+var completionState = /* @__PURE__ */ StateField.define({
+  create() {
+    return CompletionState.start();
+  },
+  update(value, tr) {
+    return value.update(tr);
+  },
+  provide: (f) => [
+    showTooltip.from(f, (val) => val.tooltip),
+    EditorView.contentAttributes.from(f, (state) => state.attrs)
+  ]
+});
+function applyCompletion(view, option) {
+  const apply = option.completion.apply || option.completion.label;
+  let result = view.state.field(completionState).active.find((a2) => a2.source == option.source);
+  if (!(result instanceof ActiveResult))
+    return false;
+  if (typeof apply == "string")
+    view.dispatch({
+      ...insertCompletionText(view.state, apply, result.from, result.to),
+      annotations: pickedCompletion.of(option.completion)
+    });
+  else
+    apply(view, option.completion, result.from, result.to);
+  return true;
+}
+var createTooltip = /* @__PURE__ */ completionTooltip(completionState, applyCompletion);
+function moveCompletionSelection(forward, by = "option") {
+  return (view) => {
+    let cState = view.state.field(completionState, false);
+    if (!cState || !cState.open || cState.open.disabled || Date.now() - cState.open.timestamp < view.state.facet(completionConfig).interactionDelay)
+      return false;
+    let step = 1, tooltip;
+    if (by == "page" && (tooltip = getTooltip(view, cState.open.tooltip)))
+      step = Math.max(2, Math.floor(tooltip.dom.offsetHeight / tooltip.dom.querySelector("li").offsetHeight) - 1);
+    let { length } = cState.open.options;
+    let selected = cState.open.selected > -1 ? cState.open.selected + step * (forward ? 1 : -1) : forward ? 0 : length - 1;
+    if (selected < 0)
+      selected = by == "page" ? 0 : length - 1;
+    else if (selected >= length)
+      selected = by == "page" ? length - 1 : 0;
+    view.dispatch({ effects: setSelectedEffect.of(selected) });
+    return true;
+  };
+}
+var acceptCompletion = (view) => {
+  let cState = view.state.field(completionState, false);
+  if (view.state.readOnly || !cState || !cState.open || cState.open.selected < 0 || cState.open.disabled || Date.now() - cState.open.timestamp < view.state.facet(completionConfig).interactionDelay)
+    return false;
+  return applyCompletion(view, cState.open.options[cState.open.selected]);
+};
+var startCompletion = (view) => {
+  let cState = view.state.field(completionState, false);
+  if (!cState)
+    return false;
+  view.dispatch({ effects: startCompletionEffect.of(true) });
+  return true;
+};
+var closeCompletion = (view) => {
+  let cState = view.state.field(completionState, false);
+  if (!cState || !cState.active.some((a2) => a2.state != 0))
+    return false;
+  view.dispatch({ effects: closeCompletionEffect.of(null) });
+  return true;
+};
+
+class RunningQuery {
+  constructor(active, context) {
+    this.active = active;
+    this.context = context;
+    this.time = Date.now();
+    this.updates = [];
+    this.done = undefined;
+  }
+}
+var MaxUpdateCount = 50;
+var MinAbortTime = 1000;
+var completionPlugin = /* @__PURE__ */ ViewPlugin.fromClass(class {
+  constructor(view) {
+    this.view = view;
+    this.debounceUpdate = -1;
+    this.running = [];
+    this.debounceAccept = -1;
+    this.pendingStart = false;
+    this.composing = 0;
+    for (let active of view.state.field(completionState).active)
+      if (active.isPending)
+        this.startQuery(active);
+  }
+  update(update) {
+    let cState = update.state.field(completionState);
+    let conf = update.state.facet(completionConfig);
+    if (!update.selectionSet && !update.docChanged && update.startState.field(completionState) == cState)
+      return;
+    let doesReset = update.transactions.some((tr) => {
+      let type = getUpdateType(tr, conf);
+      return type & 8 || (tr.selection || tr.docChanged) && !(type & 3);
+    });
+    for (let i2 = 0;i2 < this.running.length; i2++) {
+      let query = this.running[i2];
+      if (doesReset || query.context.abortOnDocChange && update.docChanged || query.updates.length + update.transactions.length > MaxUpdateCount && Date.now() - query.time > MinAbortTime) {
+        for (let handler of query.context.abortListeners) {
+          try {
+            handler();
+          } catch (e) {
+            logException(this.view.state, e);
+          }
+        }
+        query.context.abortListeners = null;
+        this.running.splice(i2--, 1);
+      } else {
+        query.updates.push(...update.transactions);
+      }
+    }
+    if (this.debounceUpdate > -1)
+      clearTimeout(this.debounceUpdate);
+    if (update.transactions.some((tr) => tr.effects.some((e) => e.is(startCompletionEffect))))
+      this.pendingStart = true;
+    let delay = this.pendingStart ? 50 : conf.activateOnTypingDelay;
+    this.debounceUpdate = cState.active.some((a2) => a2.isPending && !this.running.some((q) => q.active.source == a2.source)) ? setTimeout(() => this.startUpdate(), delay) : -1;
+    if (this.composing != 0)
+      for (let tr of update.transactions) {
+        if (tr.isUserEvent("input.type"))
+          this.composing = 2;
+        else if (this.composing == 2 && tr.selection)
+          this.composing = 3;
+      }
+  }
+  startUpdate() {
+    this.debounceUpdate = -1;
+    this.pendingStart = false;
+    let { state } = this.view, cState = state.field(completionState);
+    for (let active of cState.active) {
+      if (active.isPending && !this.running.some((r) => r.active.source == active.source))
+        this.startQuery(active);
+    }
+    if (this.running.length && cState.open && cState.open.disabled)
+      this.debounceAccept = setTimeout(() => this.accept(), this.view.state.facet(completionConfig).updateSyncTime);
+  }
+  startQuery(active) {
+    let { state } = this.view, pos = cur(state);
+    let context = new CompletionContext(state, pos, active.explicit, this.view);
+    let pending = new RunningQuery(active, context);
+    this.running.push(pending);
+    Promise.resolve(active.source(context)).then((result) => {
+      if (!pending.context.aborted) {
+        pending.done = result || null;
+        this.scheduleAccept();
+      }
+    }, (err) => {
+      this.view.dispatch({ effects: closeCompletionEffect.of(null) });
+      logException(this.view.state, err);
+    });
+  }
+  scheduleAccept() {
+    if (this.running.every((q) => q.done !== undefined))
+      this.accept();
+    else if (this.debounceAccept < 0)
+      this.debounceAccept = setTimeout(() => this.accept(), this.view.state.facet(completionConfig).updateSyncTime);
+  }
+  accept() {
+    var _a2;
+    if (this.debounceAccept > -1)
+      clearTimeout(this.debounceAccept);
+    this.debounceAccept = -1;
+    let updated = [];
+    let conf = this.view.state.facet(completionConfig), cState = this.view.state.field(completionState);
+    for (let i2 = 0;i2 < this.running.length; i2++) {
+      let query = this.running[i2];
+      if (query.done === undefined)
+        continue;
+      this.running.splice(i2--, 1);
+      if (query.done) {
+        let pos = cur(query.updates.length ? query.updates[0].startState : this.view.state);
+        let limit = Math.min(pos, query.done.from + (query.active.explicit ? 0 : 1));
+        let active = new ActiveResult(query.active.source, query.active.explicit, limit, query.done, query.done.from, (_a2 = query.done.to) !== null && _a2 !== undefined ? _a2 : pos);
+        for (let tr of query.updates)
+          active = active.update(tr, conf);
+        if (active.hasResult()) {
+          updated.push(active);
+          continue;
+        }
+      }
+      let current = cState.active.find((a2) => a2.source == query.active.source);
+      if (current && current.isPending) {
+        if (query.done == null) {
+          let active = new ActiveSource(query.active.source, 0);
+          for (let tr of query.updates)
+            active = active.update(tr, conf);
+          if (!active.isPending)
+            updated.push(active);
+        } else {
+          this.startQuery(current);
+        }
+      }
+    }
+    if (updated.length || cState.open && cState.open.disabled)
+      this.view.dispatch({ effects: setActiveEffect.of(updated) });
+  }
+}, {
+  eventHandlers: {
+    blur(event) {
+      let state = this.view.state.field(completionState, false);
+      if (state && state.tooltip && this.view.state.facet(completionConfig).closeOnBlur) {
+        let dialog = state.open && getTooltip(this.view, state.open.tooltip);
+        if (!dialog || !dialog.dom.contains(event.relatedTarget))
+          setTimeout(() => this.view.dispatch({ effects: closeCompletionEffect.of(null) }), 10);
+      }
+    },
+    compositionstart() {
+      this.composing = 1;
+    },
+    compositionend() {
+      if (this.composing == 3) {
+        setTimeout(() => this.view.dispatch({ effects: startCompletionEffect.of(false) }), 20);
+      }
+      this.composing = 0;
+    }
+  }
+});
+var windows = typeof navigator == "object" && /* @__PURE__ */ /Win/.test(navigator.platform);
+var commitCharacters = /* @__PURE__ */ Prec.highest(/* @__PURE__ */ EditorView.domEventHandlers({
+  keydown(event, view) {
+    let field = view.state.field(completionState, false);
+    if (!field || !field.open || field.open.disabled || field.open.selected < 0 || event.key.length > 1 || event.ctrlKey && !(windows && event.altKey) || event.metaKey)
+      return false;
+    let option = field.open.options[field.open.selected];
+    let result = field.active.find((a2) => a2.source == option.source);
+    let commitChars = option.completion.commitCharacters || result.result.commitCharacters;
+    if (commitChars && commitChars.indexOf(event.key) > -1)
+      applyCompletion(view, option);
+    return false;
+  }
+}));
+var baseTheme4 = /* @__PURE__ */ EditorView.baseTheme({
+  ".cm-tooltip.cm-tooltip-autocomplete": {
+    "& > ul": {
+      fontFamily: "monospace",
+      whiteSpace: "nowrap",
+      overflow: "hidden auto",
+      maxWidth_fallback: "700px",
+      maxWidth: "min(700px, 95vw)",
+      minWidth: "250px",
+      maxHeight: "10em",
+      height: "100%",
+      listStyle: "none",
+      margin: 0,
+      padding: 0,
+      "& > li, & > completion-section": {
+        padding: "1px 3px",
+        lineHeight: 1.2
+      },
+      "& > li": {
+        overflowX: "hidden",
+        textOverflow: "ellipsis",
+        cursor: "pointer"
+      },
+      "& > completion-section": {
+        display: "list-item",
+        borderBottom: "1px solid silver",
+        paddingLeft: "0.5em",
+        opacity: 0.7
+      }
+    }
+  },
+  "&light .cm-tooltip-autocomplete ul li[aria-selected]": {
+    background: "#17c",
+    color: "white"
+  },
+  "&light .cm-tooltip-autocomplete-disabled ul li[aria-selected]": {
+    background: "#777"
+  },
+  "&dark .cm-tooltip-autocomplete ul li[aria-selected]": {
+    background: "#347",
+    color: "white"
+  },
+  "&dark .cm-tooltip-autocomplete-disabled ul li[aria-selected]": {
+    background: "#444"
+  },
+  ".cm-completionListIncompleteTop:before, .cm-completionListIncompleteBottom:after": {
+    content: '"···"',
+    opacity: 0.5,
+    display: "block",
+    textAlign: "center"
+  },
+  ".cm-tooltip.cm-completionInfo": {
+    position: "absolute",
+    padding: "3px 9px",
+    width: "max-content",
+    maxWidth: `${400}px`,
+    boxSizing: "border-box",
+    whiteSpace: "pre-line"
+  },
+  ".cm-completionInfo.cm-completionInfo-left": { right: "100%" },
+  ".cm-completionInfo.cm-completionInfo-right": { left: "100%" },
+  ".cm-completionInfo.cm-completionInfo-left-narrow": { right: `${30}px` },
+  ".cm-completionInfo.cm-completionInfo-right-narrow": { left: `${30}px` },
+  "&light .cm-snippetField": { backgroundColor: "#00000022" },
+  "&dark .cm-snippetField": { backgroundColor: "#ffffff22" },
+  ".cm-snippetFieldPosition": {
+    verticalAlign: "text-top",
+    width: 0,
+    height: "1.15em",
+    display: "inline-block",
+    margin: "0 -0.7px -.7em",
+    borderLeft: "1.4px dotted #888"
+  },
+  ".cm-completionMatchedText": {
+    textDecoration: "underline"
+  },
+  ".cm-completionDetail": {
+    marginLeft: "0.5em",
+    fontStyle: "italic"
+  },
+  ".cm-completionIcon": {
+    fontSize: "90%",
+    width: ".8em",
+    display: "inline-block",
+    textAlign: "center",
+    paddingRight: ".6em",
+    opacity: "0.6",
+    boxSizing: "content-box"
+  },
+  ".cm-completionIcon-function, .cm-completionIcon-method": {
+    "&:after": { content: "'ƒ'" }
+  },
+  ".cm-completionIcon-class": {
+    "&:after": { content: "'○'" }
+  },
+  ".cm-completionIcon-interface": {
+    "&:after": { content: "'◌'" }
+  },
+  ".cm-completionIcon-variable": {
+    "&:after": { content: "'\uD835\uDC65'" }
+  },
+  ".cm-completionIcon-constant": {
+    "&:after": { content: "'\uD835\uDC36'" }
+  },
+  ".cm-completionIcon-type": {
+    "&:after": { content: "'\uD835\uDC61'" }
+  },
+  ".cm-completionIcon-enum": {
+    "&:after": { content: "'∪'" }
+  },
+  ".cm-completionIcon-property": {
+    "&:after": { content: "'□'" }
+  },
+  ".cm-completionIcon-keyword": {
+    "&:after": { content: "'\uD83D\uDD11︎'" }
+  },
+  ".cm-completionIcon-namespace": {
+    "&:after": { content: "'▢'" }
+  },
+  ".cm-completionIcon-text": {
+    "&:after": { content: "'abc'", fontSize: "50%", verticalAlign: "middle" }
+  }
+});
+var defaults2 = {
+  brackets: ["(", "[", "{", "'", '"'],
+  before: ")]}:;>",
+  stringPrefixes: []
+};
+var closeBracketEffect = /* @__PURE__ */ StateEffect.define({
+  map(value, mapping) {
+    let mapped = mapping.mapPos(value, -1, MapMode.TrackAfter);
+    return mapped == null ? undefined : mapped;
+  }
+});
+var closedBracket = /* @__PURE__ */ new class extends RangeValue {
+};
+closedBracket.startSide = 1;
+closedBracket.endSide = -1;
+var bracketState = /* @__PURE__ */ StateField.define({
+  create() {
+    return RangeSet.empty;
+  },
+  update(value, tr) {
+    value = value.map(tr.changes);
+    if (tr.selection) {
+      let line = tr.state.doc.lineAt(tr.selection.main.head);
+      value = value.update({ filter: (from) => from >= line.from && from <= line.to });
+    }
+    for (let effect of tr.effects)
+      if (effect.is(closeBracketEffect))
+        value = value.update({ add: [closedBracket.range(effect.value, effect.value + 1)] });
+    return value;
+  }
+});
+function closeBrackets() {
+  return [inputHandler2, bracketState];
+}
+var definedClosing = "()[]{}<>«»»«［］｛｝";
+function closing(ch) {
+  for (let i2 = 0;i2 < definedClosing.length; i2 += 2)
+    if (definedClosing.charCodeAt(i2) == ch)
+      return definedClosing.charAt(i2 + 1);
+  return fromCodePoint(ch < 128 ? ch : ch + 1);
+}
+function config(state, pos) {
+  return state.languageDataAt("closeBrackets", pos)[0] || defaults2;
+}
+var android = typeof navigator == "object" && /* @__PURE__ */ /Android\b/.test(navigator.userAgent);
+var inputHandler2 = /* @__PURE__ */ EditorView.inputHandler.of((view, from, to, insert2) => {
+  if ((android ? view.composing : view.compositionStarted) || view.state.readOnly)
+    return false;
+  let sel = view.state.selection.main;
+  if (insert2.length > 2 || insert2.length == 2 && codePointSize2(codePointAt2(insert2, 0)) == 1 || from != sel.from || to != sel.to)
+    return false;
+  let tr = insertBracket(view.state, insert2);
+  if (!tr)
+    return false;
+  view.dispatch(tr);
+  return true;
+});
+var deleteBracketPair = ({ state, dispatch }) => {
+  if (state.readOnly)
+    return false;
+  let conf = config(state, state.selection.main.head);
+  let tokens = conf.brackets || defaults2.brackets;
+  let dont = null, changes = state.changeByRange((range) => {
+    if (range.empty) {
+      let before = prevChar(state.doc, range.head);
+      for (let token of tokens) {
+        if (token == before && nextChar(state.doc, range.head) == closing(codePointAt2(token, 0)))
+          return {
+            changes: { from: range.head - token.length, to: range.head + token.length },
+            range: EditorSelection.cursor(range.head - token.length)
+          };
+      }
+    }
+    return { range: dont = range };
+  });
+  if (!dont)
+    dispatch(state.update(changes, { scrollIntoView: true, userEvent: "delete.backward" }));
+  return !dont;
+};
+var closeBracketsKeymap = [
+  { key: "Backspace", run: deleteBracketPair }
+];
+function insertBracket(state, bracket2) {
+  let conf = config(state, state.selection.main.head);
+  let tokens = conf.brackets || defaults2.brackets;
+  for (let tok of tokens) {
+    let closed = closing(codePointAt2(tok, 0));
+    if (bracket2 == tok)
+      return closed == tok ? handleSame(state, tok, tokens.indexOf(tok + tok + tok) > -1, conf) : handleOpen(state, tok, closed, conf.before || defaults2.before);
+    if (bracket2 == closed && closedBracketAt(state, state.selection.main.from))
+      return handleClose(state, tok, closed);
+  }
+  return null;
+}
+function closedBracketAt(state, pos) {
+  let found = false;
+  state.field(bracketState).between(0, state.doc.length, (from) => {
+    if (from == pos)
+      found = true;
+  });
+  return found;
+}
+function nextChar(doc2, pos) {
+  let next = doc2.sliceString(pos, pos + 2);
+  return next.slice(0, codePointSize2(codePointAt2(next, 0)));
+}
+function prevChar(doc2, pos) {
+  let prev = doc2.sliceString(pos - 2, pos);
+  return codePointSize2(codePointAt2(prev, 0)) == prev.length ? prev : prev.slice(1);
+}
+function handleOpen(state, open, close, closeBefore) {
+  let dont = null, changes = state.changeByRange((range) => {
+    if (!range.empty)
+      return {
+        changes: [{ insert: open, from: range.from }, { insert: close, from: range.to }],
+        effects: closeBracketEffect.of(range.to + open.length),
+        range: EditorSelection.range(range.anchor + open.length, range.head + open.length)
+      };
+    let next = nextChar(state.doc, range.head);
+    if (!next || /\s/.test(next) || closeBefore.indexOf(next) > -1)
+      return {
+        changes: { insert: open + close, from: range.head },
+        effects: closeBracketEffect.of(range.head + open.length),
+        range: EditorSelection.cursor(range.head + open.length)
+      };
+    return { range: dont = range };
+  });
+  return dont ? null : state.update(changes, {
+    scrollIntoView: true,
+    userEvent: "input.type"
+  });
+}
+function handleClose(state, _open, close) {
+  let dont = null, changes = state.changeByRange((range) => {
+    if (range.empty && nextChar(state.doc, range.head) == close)
+      return {
+        changes: { from: range.head, to: range.head + close.length, insert: close },
+        range: EditorSelection.cursor(range.head + close.length)
+      };
+    return dont = { range };
+  });
+  return dont ? null : state.update(changes, {
+    scrollIntoView: true,
+    userEvent: "input.type"
+  });
+}
+function handleSame(state, token, allowTriple, config2) {
+  let stringPrefixes = config2.stringPrefixes || defaults2.stringPrefixes;
+  let dont = null, changes = state.changeByRange((range) => {
+    if (!range.empty)
+      return {
+        changes: [{ insert: token, from: range.from }, { insert: token, from: range.to }],
+        effects: closeBracketEffect.of(range.to + token.length),
+        range: EditorSelection.range(range.anchor + token.length, range.head + token.length)
+      };
+    let pos = range.head, next = nextChar(state.doc, pos), start;
+    if (next == token) {
+      if (nodeStart(state, pos)) {
+        return {
+          changes: { insert: token + token, from: pos },
+          effects: closeBracketEffect.of(pos + token.length),
+          range: EditorSelection.cursor(pos + token.length)
+        };
+      } else if (closedBracketAt(state, pos)) {
+        let isTriple = allowTriple && state.sliceDoc(pos, pos + token.length * 3) == token + token + token;
+        let content2 = isTriple ? token + token + token : token;
+        return {
+          changes: { from: pos, to: pos + content2.length, insert: content2 },
+          range: EditorSelection.cursor(pos + content2.length)
+        };
+      }
+    } else if (allowTriple && state.sliceDoc(pos - 2 * token.length, pos) == token + token && (start = canStartStringAt(state, pos - 2 * token.length, stringPrefixes)) > -1 && nodeStart(state, start)) {
+      return {
+        changes: { insert: token + token + token + token, from: pos },
+        effects: closeBracketEffect.of(pos + token.length),
+        range: EditorSelection.cursor(pos + token.length)
+      };
+    } else if (state.charCategorizer(pos)(next) != CharCategory.Word) {
+      if (canStartStringAt(state, pos, stringPrefixes) > -1 && !probablyInString(state, pos, token, stringPrefixes))
+        return {
+          changes: { insert: token + token, from: pos },
+          effects: closeBracketEffect.of(pos + token.length),
+          range: EditorSelection.cursor(pos + token.length)
+        };
+    }
+    return { range: dont = range };
+  });
+  return dont ? null : state.update(changes, {
+    scrollIntoView: true,
+    userEvent: "input.type"
+  });
+}
+function nodeStart(state, pos) {
+  let tree = syntaxTree(state).resolveInner(pos + 1);
+  return tree.parent && tree.from == pos;
+}
+function probablyInString(state, pos, quoteToken, prefixes) {
+  let node = syntaxTree(state).resolveInner(pos, -1);
+  let maxPrefix = prefixes.reduce((m, p) => Math.max(m, p.length), 0);
+  for (let i2 = 0;i2 < 5; i2++) {
+    let start = state.sliceDoc(node.from, Math.min(node.to, node.from + quoteToken.length + maxPrefix));
+    let quotePos = start.indexOf(quoteToken);
+    if (!quotePos || quotePos > -1 && prefixes.indexOf(start.slice(0, quotePos)) > -1) {
+      let first = node.firstChild;
+      while (first && first.from == node.from && first.to - first.from > quoteToken.length + quotePos) {
+        if (state.sliceDoc(first.to - quoteToken.length, first.to) == quoteToken)
+          return false;
+        first = first.firstChild;
+      }
+      return true;
+    }
+    let parent = node.to == pos && node.parent;
+    if (!parent)
+      break;
+    node = parent;
+  }
+  return false;
+}
+function canStartStringAt(state, pos, prefixes) {
+  let charCat = state.charCategorizer(pos);
+  if (charCat(state.sliceDoc(pos - 1, pos)) != CharCategory.Word)
+    return pos;
+  for (let prefix of prefixes) {
+    let start = pos - prefix.length;
+    if (state.sliceDoc(start, pos) == prefix && charCat(state.sliceDoc(start - 1, start)) != CharCategory.Word)
+      return start;
+  }
+  return -1;
+}
+function autocompletion(config2 = {}) {
+  return [
+    commitCharacters,
+    completionState,
+    completionConfig.of(config2),
+    completionPlugin,
+    completionKeymapExt,
+    baseTheme4
+  ];
+}
+var completionKeymap = [
+  { key: "Ctrl-Space", run: startCompletion },
+  { mac: "Alt-`", run: startCompletion },
+  { mac: "Alt-i", run: startCompletion },
+  { key: "Escape", run: closeCompletion },
+  { key: "ArrowDown", run: /* @__PURE__ */ moveCompletionSelection(true) },
+  { key: "ArrowUp", run: /* @__PURE__ */ moveCompletionSelection(false) },
+  { key: "PageDown", run: /* @__PURE__ */ moveCompletionSelection(true, "page") },
+  { key: "PageUp", run: /* @__PURE__ */ moveCompletionSelection(false, "page") },
+  { key: "Enter", run: acceptCompletion }
+];
+var completionKeymapExt = /* @__PURE__ */ Prec.highest(/* @__PURE__ */ keymap.computeN([completionConfig], (state) => state.facet(completionConfig).defaultKeymap ? [completionKeymap] : []));
+
+// node_modules/@codemirror/lint/dist/index.js
+class SelectedDiagnostic {
+  constructor(from, to, diagnostic) {
+    this.from = from;
+    this.to = to;
+    this.diagnostic = diagnostic;
+  }
+}
+
+class LintState {
+  constructor(diagnostics, panel, selected) {
+    this.diagnostics = diagnostics;
+    this.panel = panel;
+    this.selected = selected;
+  }
+  static init(diagnostics, panel, state) {
+    let diagnosticFilter = state.facet(lintConfig).markerFilter;
+    if (diagnosticFilter)
+      diagnostics = diagnosticFilter(diagnostics, state);
+    let sorted = diagnostics.slice().sort((a2, b) => a2.from - b.from || a2.to - b.to);
+    let deco = new RangeSetBuilder, active = [], pos = 0;
+    let scan = state.doc.iter(), scanPos = 0, docLen = state.doc.length;
+    for (let i2 = 0;; ) {
+      let next = i2 == sorted.length ? null : sorted[i2];
+      if (!next && !active.length)
+        break;
+      let from, to;
+      if (active.length) {
+        from = pos;
+        to = active.reduce((p, d) => Math.min(p, d.to), next && next.from > from ? next.from : 1e8);
+      } else {
+        from = next.from;
+        if (from > docLen)
+          break;
+        to = next.to;
+        active.push(next);
+        i2++;
+      }
+      while (i2 < sorted.length) {
+        let next2 = sorted[i2];
+        if (next2.from == from && (next2.to > next2.from || next2.to == from)) {
+          active.push(next2);
+          i2++;
+          to = Math.min(next2.to, to);
+        } else {
+          to = Math.min(next2.from, to);
+          break;
+        }
+      }
+      to = Math.min(to, docLen);
+      let widget = false;
+      if (active.some((d) => d.from == from && (d.to == to || to == docLen))) {
+        widget = from == to;
+        if (!widget && to - from < 10) {
+          let behind = from - (scanPos + scan.value.length);
+          if (behind > 0) {
+            scan.next(behind);
+            scanPos = from;
+          }
+          for (let check = from;; ) {
+            if (check >= to) {
+              widget = true;
+              break;
+            }
+            if (!scan.lineBreak && scanPos + scan.value.length > check)
+              break;
+            check = scanPos + scan.value.length;
+            scanPos += scan.value.length;
+            scan.next();
+          }
+        }
+      }
+      let sev = maxSeverity(active);
+      if (widget) {
+        deco.add(from, from, Decoration.widget({
+          widget: new DiagnosticWidget(sev),
+          diagnostics: active.slice()
+        }));
+      } else {
+        let markClass = active.reduce((c, d) => d.markClass ? c + " " + d.markClass : c, "");
+        deco.add(from, to, Decoration.mark({
+          class: "cm-lintRange cm-lintRange-" + sev + markClass,
+          diagnostics: active.slice(),
+          inclusiveEnd: active.some((a2) => a2.to > to)
+        }));
+      }
+      pos = to;
+      if (pos == docLen)
+        break;
+      for (let i3 = 0;i3 < active.length; i3++)
+        if (active[i3].to <= pos)
+          active.splice(i3--, 1);
+    }
+    let set = deco.finish();
+    return new LintState(set, panel, findDiagnostic(set));
+  }
+}
+function findDiagnostic(diagnostics, diagnostic = null, after = 0) {
+  let found = null;
+  diagnostics.between(after, 1e9, (from, to, { spec }) => {
+    if (diagnostic && spec.diagnostics.indexOf(diagnostic) < 0)
+      return;
+    if (!found)
+      found = new SelectedDiagnostic(from, to, diagnostic || spec.diagnostics[0]);
+    else if (spec.diagnostics.indexOf(found.diagnostic) < 0)
+      return false;
+    else
+      found = new SelectedDiagnostic(found.from, to, found.diagnostic);
+  });
+  return found;
+}
+function hideTooltip(tr, tooltip) {
+  let from = tooltip.pos, to = tooltip.end || from;
+  let result = tr.state.facet(lintConfig).hideOn(tr, from, to);
+  if (result != null)
+    return result;
+  let line = tr.startState.doc.lineAt(tooltip.pos);
+  return !!(tr.effects.some((e) => e.is(setDiagnosticsEffect)) || tr.changes.touchesRange(line.from, Math.max(line.to, to)));
+}
+function maybeEnableLint(state, effects) {
+  return state.field(lintState, false) ? effects : effects.concat(StateEffect.appendConfig.of(lintExtensions));
+}
+var setDiagnosticsEffect = /* @__PURE__ */ StateEffect.define();
+var togglePanel2 = /* @__PURE__ */ StateEffect.define();
+var movePanelSelection = /* @__PURE__ */ StateEffect.define();
+var lintState = /* @__PURE__ */ StateField.define({
+  create() {
+    return new LintState(Decoration.none, null, null);
+  },
+  update(value, tr) {
+    if (tr.docChanged && value.diagnostics.size) {
+      let mapped = value.diagnostics.map(tr.changes), selected = null, panel = value.panel;
+      if (value.selected) {
+        let selPos = tr.changes.mapPos(value.selected.from, 1);
+        selected = findDiagnostic(mapped, value.selected.diagnostic, selPos) || findDiagnostic(mapped, null, selPos);
+      }
+      if (!mapped.size && panel && tr.state.facet(lintConfig).autoPanel)
+        panel = null;
+      value = new LintState(mapped, panel, selected);
+    }
+    for (let effect of tr.effects) {
+      if (effect.is(setDiagnosticsEffect)) {
+        let panel = !tr.state.facet(lintConfig).autoPanel ? value.panel : effect.value.length ? LintPanel.open : null;
+        value = LintState.init(effect.value, panel, tr.state);
+      } else if (effect.is(togglePanel2)) {
+        value = new LintState(value.diagnostics, effect.value ? LintPanel.open : null, value.selected);
+      } else if (effect.is(movePanelSelection)) {
+        value = new LintState(value.diagnostics, value.panel, effect.value);
+      }
+    }
+    return value;
+  },
+  provide: (f) => [
+    showPanel.from(f, (val) => val.panel),
+    EditorView.decorations.from(f, (s) => s.diagnostics)
+  ]
+});
+var activeMark = /* @__PURE__ */ Decoration.mark({ class: "cm-lintRange cm-lintRange-active" });
+function lintTooltip(view, pos, side) {
+  let { diagnostics } = view.state.field(lintState);
+  let found, start = -1, end = -1;
+  diagnostics.between(pos - (side < 0 ? 1 : 0), pos + (side > 0 ? 1 : 0), (from, to, { spec }) => {
+    if (pos >= from && pos <= to && (from == to || (pos > from || side > 0) && (pos < to || side < 0))) {
+      found = spec.diagnostics;
+      start = from;
+      end = to;
+      return false;
+    }
+  });
+  let diagnosticFilter = view.state.facet(lintConfig).tooltipFilter;
+  if (found && diagnosticFilter)
+    found = diagnosticFilter(found, view.state);
+  if (!found)
+    return null;
+  return {
+    pos: start,
+    end,
+    above: view.state.doc.lineAt(start).to < end,
+    create() {
+      return { dom: diagnosticsTooltip(view, found) };
+    }
+  };
+}
+function diagnosticsTooltip(view, diagnostics) {
+  return crelt("ul", { class: "cm-tooltip-lint" }, diagnostics.map((d) => renderDiagnostic(view, d, false)));
+}
+var openLintPanel = (view) => {
+  let field = view.state.field(lintState, false);
+  if (!field || !field.panel)
+    view.dispatch({ effects: maybeEnableLint(view.state, [togglePanel2.of(true)]) });
+  let panel = getPanel(view, LintPanel.open);
+  if (panel)
+    panel.dom.querySelector(".cm-panel-lint ul").focus();
+  return true;
+};
+var closeLintPanel = (view) => {
+  let field = view.state.field(lintState, false);
+  if (!field || !field.panel)
+    return false;
+  view.dispatch({ effects: togglePanel2.of(false) });
+  return true;
+};
+var nextDiagnostic = (view) => {
+  let field = view.state.field(lintState, false);
+  if (!field)
+    return false;
+  let sel = view.state.selection.main, next = findDiagnostic(field.diagnostics, null, sel.to + 1);
+  if (!next) {
+    next = findDiagnostic(field.diagnostics, null, 0);
+    if (!next || next.from == sel.from && next.to == sel.to)
+      return false;
+  }
+  view.dispatch({ selection: { anchor: next.from, head: next.to }, scrollIntoView: true });
+  return true;
+};
+var lintKeymap = [
+  { key: "Mod-Shift-m", run: openLintPanel, preventDefault: true },
+  { key: "F8", run: nextDiagnostic }
+];
+var lintConfig = /* @__PURE__ */ Facet.define({
+  combine(input) {
+    return {
+      sources: input.map((i2) => i2.source).filter((x) => x != null),
+      ...combineConfig(input.map((i2) => i2.config), {
+        delay: 750,
+        markerFilter: null,
+        tooltipFilter: null,
+        needsRefresh: null,
+        hideOn: () => null
+      }, {
+        delay: Math.max,
+        markerFilter: combineFilter,
+        tooltipFilter: combineFilter,
+        needsRefresh: (a2, b) => !a2 ? b : !b ? a2 : (u2) => a2(u2) || b(u2),
+        hideOn: (a2, b) => !a2 ? b : !b ? a2 : (t2, x, y) => a2(t2, x, y) || b(t2, x, y),
+        autoPanel: (a2, b) => a2 || b
+      })
+    };
+  }
+});
+function combineFilter(a2, b) {
+  return !a2 ? b : !b ? a2 : (d, s) => b(a2(d, s), s);
+}
+function assignKeys(actions) {
+  let assigned = [];
+  if (actions)
+    actions:
+      for (let { name: name2 } of actions) {
+        for (let i2 = 0;i2 < name2.length; i2++) {
+          let ch = name2[i2];
+          if (/[a-zA-Z]/.test(ch) && !assigned.some((c) => c.toLowerCase() == ch.toLowerCase())) {
+            assigned.push(ch);
+            continue actions;
+          }
+        }
+        assigned.push("");
+      }
+  return assigned;
+}
+function renderDiagnostic(view, diagnostic, inPanel) {
+  var _a2;
+  let keys2 = inPanel ? assignKeys(diagnostic.actions) : [];
+  return crelt("li", { class: "cm-diagnostic cm-diagnostic-" + diagnostic.severity }, crelt("span", { class: "cm-diagnosticText" }, diagnostic.renderMessage ? diagnostic.renderMessage(view) : diagnostic.message), (_a2 = diagnostic.actions) === null || _a2 === undefined ? undefined : _a2.map((action, i2) => {
+    let fired = false, click = (e) => {
+      e.preventDefault();
+      if (fired)
+        return;
+      fired = true;
+      let found = findDiagnostic(view.state.field(lintState).diagnostics, diagnostic);
+      if (found)
+        action.apply(view, found.from, found.to);
+    };
+    let { name: name2 } = action, keyIndex = keys2[i2] ? name2.indexOf(keys2[i2]) : -1;
+    let nameElt = keyIndex < 0 ? name2 : [
+      name2.slice(0, keyIndex),
+      crelt("u", name2.slice(keyIndex, keyIndex + 1)),
+      name2.slice(keyIndex + 1)
+    ];
+    let markClass = action.markClass ? " " + action.markClass : "";
+    return crelt("button", {
+      type: "button",
+      class: "cm-diagnosticAction" + markClass,
+      onclick: click,
+      onmousedown: click,
+      "aria-label": ` Action: ${name2}${keyIndex < 0 ? "" : ` (access key "${keys2[i2]})"`}.`
+    }, nameElt);
+  }), diagnostic.source && crelt("div", { class: "cm-diagnosticSource" }, diagnostic.source));
+}
+
+class DiagnosticWidget extends WidgetType {
+  constructor(sev) {
+    super();
+    this.sev = sev;
+  }
+  eq(other) {
+    return other.sev == this.sev;
+  }
+  toDOM() {
+    return crelt("span", { class: "cm-lintPoint cm-lintPoint-" + this.sev });
+  }
+}
+
+class PanelItem {
+  constructor(view, diagnostic) {
+    this.diagnostic = diagnostic;
+    this.id = "item_" + Math.floor(Math.random() * 4294967295).toString(16);
+    this.dom = renderDiagnostic(view, diagnostic, true);
+    this.dom.id = this.id;
+    this.dom.setAttribute("role", "option");
+  }
+}
+
+class LintPanel {
+  constructor(view) {
+    this.view = view;
+    this.items = [];
+    let onkeydown = (event) => {
+      if (event.ctrlKey || event.altKey || event.metaKey)
+        return;
+      if (event.keyCode == 27) {
+        closeLintPanel(this.view);
+        this.view.focus();
+      } else if (event.keyCode == 38 || event.keyCode == 33) {
+        this.moveSelection((this.selectedIndex - 1 + this.items.length) % this.items.length);
+      } else if (event.keyCode == 40 || event.keyCode == 34) {
+        this.moveSelection((this.selectedIndex + 1) % this.items.length);
+      } else if (event.keyCode == 36) {
+        this.moveSelection(0);
+      } else if (event.keyCode == 35) {
+        this.moveSelection(this.items.length - 1);
+      } else if (event.keyCode == 13) {
+        this.view.focus();
+      } else if (event.keyCode >= 65 && event.keyCode <= 90 && this.selectedIndex >= 0) {
+        let { diagnostic } = this.items[this.selectedIndex], keys2 = assignKeys(diagnostic.actions);
+        for (let i2 = 0;i2 < keys2.length; i2++)
+          if (keys2[i2].toUpperCase().charCodeAt(0) == event.keyCode) {
+            let found = findDiagnostic(this.view.state.field(lintState).diagnostics, diagnostic);
+            if (found)
+              diagnostic.actions[i2].apply(view, found.from, found.to);
+          }
+      } else {
+        return;
+      }
+      event.preventDefault();
+    };
+    let onclick = (event) => {
+      for (let i2 = 0;i2 < this.items.length; i2++) {
+        if (this.items[i2].dom.contains(event.target))
+          this.moveSelection(i2);
+      }
+    };
+    this.list = crelt("ul", {
+      tabIndex: 0,
+      role: "listbox",
+      "aria-label": this.view.state.phrase("Diagnostics"),
+      onkeydown,
+      onclick
+    });
+    this.dom = crelt("div", { class: "cm-panel-lint" }, this.list, crelt("button", {
+      type: "button",
+      name: "close",
+      "aria-label": this.view.state.phrase("close"),
+      onclick: () => closeLintPanel(this.view)
+    }, "×"));
+    this.update();
+  }
+  get selectedIndex() {
+    let selected = this.view.state.field(lintState).selected;
+    if (!selected)
+      return -1;
+    for (let i2 = 0;i2 < this.items.length; i2++)
+      if (this.items[i2].diagnostic == selected.diagnostic)
+        return i2;
+    return -1;
+  }
+  update() {
+    let { diagnostics, selected } = this.view.state.field(lintState);
+    let i2 = 0, needsSync = false, newSelectedItem = null;
+    let seen = new Set;
+    diagnostics.between(0, this.view.state.doc.length, (_start, _end, { spec }) => {
+      for (let diagnostic of spec.diagnostics) {
+        if (seen.has(diagnostic))
+          continue;
+        seen.add(diagnostic);
+        let found = -1, item;
+        for (let j = i2;j < this.items.length; j++)
+          if (this.items[j].diagnostic == diagnostic) {
+            found = j;
+            break;
+          }
+        if (found < 0) {
+          item = new PanelItem(this.view, diagnostic);
+          this.items.splice(i2, 0, item);
+          needsSync = true;
+        } else {
+          item = this.items[found];
+          if (found > i2) {
+            this.items.splice(i2, found - i2);
+            needsSync = true;
+          }
+        }
+        if (selected && item.diagnostic == selected.diagnostic) {
+          if (!item.dom.hasAttribute("aria-selected")) {
+            item.dom.setAttribute("aria-selected", "true");
+            newSelectedItem = item;
+          }
+        } else if (item.dom.hasAttribute("aria-selected")) {
+          item.dom.removeAttribute("aria-selected");
+        }
+        i2++;
+      }
+    });
+    while (i2 < this.items.length && !(this.items.length == 1 && this.items[0].diagnostic.from < 0)) {
+      needsSync = true;
+      this.items.pop();
+    }
+    if (this.items.length == 0) {
+      this.items.push(new PanelItem(this.view, {
+        from: -1,
+        to: -1,
+        severity: "info",
+        message: this.view.state.phrase("No diagnostics")
+      }));
+      needsSync = true;
+    }
+    if (newSelectedItem) {
+      this.list.setAttribute("aria-activedescendant", newSelectedItem.id);
+      this.view.requestMeasure({
+        key: this,
+        read: () => ({ sel: newSelectedItem.dom.getBoundingClientRect(), panel: this.list.getBoundingClientRect() }),
+        write: ({ sel, panel }) => {
+          let scaleY = panel.height / this.list.offsetHeight;
+          if (sel.top < panel.top)
+            this.list.scrollTop -= (panel.top - sel.top) / scaleY;
+          else if (sel.bottom > panel.bottom)
+            this.list.scrollTop += (sel.bottom - panel.bottom) / scaleY;
+        }
+      });
+    } else if (this.selectedIndex < 0) {
+      this.list.removeAttribute("aria-activedescendant");
+    }
+    if (needsSync)
+      this.sync();
+  }
+  sync() {
+    let domPos = this.list.firstChild;
+    function rm2() {
+      let prev = domPos;
+      domPos = prev.nextSibling;
+      prev.remove();
+    }
+    for (let item of this.items) {
+      if (item.dom.parentNode == this.list) {
+        while (domPos != item.dom)
+          rm2();
+        domPos = item.dom.nextSibling;
+      } else {
+        this.list.insertBefore(item.dom, domPos);
+      }
+    }
+    while (domPos)
+      rm2();
+  }
+  moveSelection(selectedIndex) {
+    if (this.selectedIndex < 0)
+      return;
+    let field = this.view.state.field(lintState);
+    let selection = findDiagnostic(field.diagnostics, this.items[selectedIndex].diagnostic);
+    if (!selection)
+      return;
+    this.view.dispatch({
+      selection: { anchor: selection.from, head: selection.to },
+      scrollIntoView: true,
+      effects: movePanelSelection.of(selection)
+    });
+  }
+  static open(view) {
+    return new LintPanel(view);
+  }
+}
+function svg(content2, attrs = `viewBox="0 0 40 40"`) {
+  return `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" ${attrs}>${encodeURIComponent(content2)}</svg>')`;
+}
+function underline(color) {
+  return svg(`<path d="m0 2.5 l2 -1.5 l1 0 l2 1.5 l1 0" stroke="${color}" fill="none" stroke-width=".7"/>`, `width="6" height="3"`);
+}
+var baseTheme5 = /* @__PURE__ */ EditorView.baseTheme({
+  ".cm-diagnostic": {
+    padding: "3px 6px 3px 8px",
+    marginLeft: "-1px",
+    display: "block",
+    whiteSpace: "pre-wrap"
+  },
+  ".cm-diagnostic-error": { borderLeft: "5px solid #d11" },
+  ".cm-diagnostic-warning": { borderLeft: "5px solid orange" },
+  ".cm-diagnostic-info": { borderLeft: "5px solid #999" },
+  ".cm-diagnostic-hint": { borderLeft: "5px solid #66d" },
+  ".cm-diagnosticAction": {
+    font: "inherit",
+    border: "none",
+    padding: "2px 4px",
+    backgroundColor: "#444",
+    color: "white",
+    borderRadius: "3px",
+    marginLeft: "8px",
+    cursor: "pointer"
+  },
+  ".cm-diagnosticSource": {
+    fontSize: "70%",
+    opacity: 0.7
+  },
+  ".cm-lintRange": {
+    backgroundPosition: "left bottom",
+    backgroundRepeat: "repeat-x",
+    paddingBottom: "0.7px"
+  },
+  ".cm-lintRange-error": { backgroundImage: /* @__PURE__ */ underline("#d11") },
+  ".cm-lintRange-warning": { backgroundImage: /* @__PURE__ */ underline("orange") },
+  ".cm-lintRange-info": { backgroundImage: /* @__PURE__ */ underline("#999") },
+  ".cm-lintRange-hint": { backgroundImage: /* @__PURE__ */ underline("#66d") },
+  ".cm-lintRange-active": { backgroundColor: "#ffdd9980" },
+  ".cm-tooltip-lint": {
+    padding: 0,
+    margin: 0
+  },
+  ".cm-lintPoint": {
+    position: "relative",
+    "&:after": {
+      content: '""',
+      position: "absolute",
+      bottom: 0,
+      left: "-2px",
+      borderLeft: "3px solid transparent",
+      borderRight: "3px solid transparent",
+      borderBottom: "4px solid #d11"
+    }
+  },
+  ".cm-lintPoint-warning": {
+    "&:after": { borderBottomColor: "orange" }
+  },
+  ".cm-lintPoint-info": {
+    "&:after": { borderBottomColor: "#999" }
+  },
+  ".cm-lintPoint-hint": {
+    "&:after": { borderBottomColor: "#66d" }
+  },
+  ".cm-panel.cm-panel-lint": {
+    position: "relative",
+    "& ul": {
+      maxHeight: "100px",
+      overflowY: "auto",
+      "& [aria-selected]": {
+        backgroundColor: "#ddd",
+        "& u": { textDecoration: "underline" }
+      },
+      "&:focus [aria-selected]": {
+        background_fallback: "#bdf",
+        backgroundColor: "Highlight",
+        color_fallback: "white",
+        color: "HighlightText"
+      },
+      "& u": { textDecoration: "none" },
+      padding: 0,
+      margin: 0
+    },
+    "& [name=close]": {
+      position: "absolute",
+      top: "0",
+      right: "2px",
+      background: "inherit",
+      border: "none",
+      font: "inherit",
+      padding: 0,
+      margin: 0
+    }
+  }
+});
+function severityWeight(sev) {
+  return sev == "error" ? 4 : sev == "warning" ? 3 : sev == "info" ? 2 : 1;
+}
+function maxSeverity(diagnostics) {
+  let sev = "hint", weight = 1;
+  for (let d of diagnostics) {
+    let w = severityWeight(d.severity);
+    if (w > weight) {
+      weight = w;
+      sev = d.severity;
+    }
+  }
+  return sev;
+}
+var lintExtensions = [
+  lintState,
+  /* @__PURE__ */ EditorView.decorations.compute([lintState], (state) => {
+    let { selected, panel } = state.field(lintState);
+    return !selected || !panel || selected.from == selected.to ? Decoration.none : Decoration.set([
+      activeMark.range(selected.from, selected.to)
+    ]);
+  }),
+  /* @__PURE__ */ hoverTooltip(lintTooltip, { hideOn: hideTooltip }),
+  baseTheme5
+];
+
+// node_modules/codemirror/dist/index.js
+var basicSetup = /* @__PURE__ */ (() => [
+  lineNumbers(),
+  highlightActiveLineGutter(),
+  highlightSpecialChars(),
+  history(),
+  foldGutter(),
+  drawSelection(),
+  dropCursor(),
+  EditorState.allowMultipleSelections.of(true),
+  indentOnInput(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  bracketMatching(),
+  closeBrackets(),
+  autocompletion(),
+  rectangularSelection(),
+  crosshairCursor(),
+  highlightActiveLine(),
+  highlightSelectionMatches(),
+  keymap.of([
+    ...closeBracketsKeymap,
+    ...defaultKeymap,
+    ...searchKeymap,
+    ...historyKeymap,
+    ...foldKeymap,
+    ...completionKeymap,
+    ...lintKeymap
+  ])
+])();
 
 // public/playground.js
 var isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);

@@ -1,0 +1,13 @@
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "biome-check",
+    name = "biome-check",
+    language = "system",
+    entry = "biome-musl check public/playground.js",
+    pass_filenames = false,
+    files = "^public/playground\\.js$",
+    always_run = true,
+  },
+]

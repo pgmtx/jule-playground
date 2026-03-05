@@ -1,15 +1,15 @@
 import { indentWithTab } from "@codemirror/commands";
+import { cpp } from "@codemirror/lang-cpp";
 import {
 	HighlightStyle,
 	indentUnit,
 	StreamLanguage,
 	syntaxHighlighting,
 } from "@codemirror/language";
-import { keymap } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
+import { keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
-import { cpp } from "@codemirror/lang-cpp";
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const runButton = document.getElementById("run-button");

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -113,10 +114,25 @@ func formatHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	inputCode, _ := io.ReadAll(r.Body)
+
+	// When an error occurs, julefmt writes to stderr but still returns 0 as an exit code.
+	// Therefore you have to check directly stderr and stdout content.
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
 	cmd := exec.Command("julefmt")
 	cmd.Stdin = strings.NewReader(string(inputCode))
-	outputCode, _ := cmd.CombinedOutput()
-	fmt.Fprint(w, string(outputCode))
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	if err != nil {
+		errorMessage := fmt.Sprintf("Exit error: %v\n", err)
+		http.Error(w, errorMessage, 500)
+	} else if stderr.Len() != 0 {
+		http.Error(w, stderr.String(), 500)
+	} else if stdout.Len() != 0 {
+		fmt.Fprint(w, stdout.String())
+	}
 }
 
 func main() {

@@ -20687,7 +20687,13 @@ formatButton.onclick = () => {
     method: "POST",
     body: inputCode,
     headers: { "Content-Type": "text/plain" }
-  }).then((res) => res.text()).then((formattedCode) => {
+  }).then(async (res) => {
+    if (res.status >= 500) {
+      const message = await res.text();
+      throw message;
+    }
+    return res.text();
+  }).then((formattedCode) => {
     editor.dispatch({
       changes: {
         from: 0,

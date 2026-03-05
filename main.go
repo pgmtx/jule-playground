@@ -167,7 +167,11 @@ func transpileHandler(w http.ResponseWriter, r *http.Request) {
 
 	cmd := exec.Command("julec", "build", "--transpile", ".")
 	cmd.Dir = tempDir
-	cmd.Run()
+	if err = cmd.Run(); err != nil {
+		http.Error(w, "error: could not transpile the code.", http.StatusInternalServerError)
+		return
+	}
+
 	irPath := filepath.Join(tempDir, "dist", "ir.cpp")
 	irCode, err := os.ReadFile(irPath)
 	if err != nil {

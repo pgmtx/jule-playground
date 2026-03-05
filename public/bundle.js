@@ -20734,10 +20734,10 @@ document.getElementById("transpile-button").onclick = () => {
     return res.text();
   }).then((formattedCode) => {
     outputElement.textContent = formattedCode;
-    isFormatting = false;
+    isTranspiling = false;
   }).catch((err) => {
     outputElement.textContent = err;
-    isFormatting = false;
+    isTranspiling = false;
   });
 };
 var examples = document.getElementById("examples");

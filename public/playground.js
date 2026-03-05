@@ -6,8 +6,10 @@ import {
 	syntaxHighlighting,
 } from "@codemirror/language";
 import { keymap } from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
+import { cpp } from "@codemirror/lang-cpp";
 
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 const runButton = document.getElementById("run-button");
@@ -156,7 +158,7 @@ const editor = new EditorView({
 });
 
 const irEditor = new EditorView({
-	extensions: [basicSetup],
+	extensions: [basicSetup, EditorState.readOnly.of(true), cpp()],
 	parent: document.getElementById("ir-editor"),
 });
 
@@ -275,7 +277,13 @@ document.getElementById("transpile-button").onclick = () => {
 			return res.text();
 		})
 		.then((formattedCode) => {
-			outputElement.textContent = formattedCode;
+			irEditor.dispatch({
+				changes: {
+					from: 0,
+					to: irEditor.state.doc.length,
+					insert: formattedCode,
+				},
+			});
 			isTranspiling = false;
 		})
 		.catch((err) => {

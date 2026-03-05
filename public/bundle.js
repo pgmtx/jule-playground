@@ -20509,8 +20509,11 @@ var basicSetup = /* @__PURE__ */ (() => [
 
 // public/playground.js
 var isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+var runButton = document.getElementById("run-button");
+var formatButton = document.getElementById("format-button");
 if (isMobile) {
-  document.getElementById("run-button").innerText = "Run";
+  runButton.innerText = "Run";
+  formatButton.innerText = "Format";
 }
 var types2 = [
   "bool",
@@ -20629,7 +20632,7 @@ var jule = StreamLanguage.define({
   }
 });
 var helloWorldCode = `fn main() {
-  println("Hello World!")
+	println("Hello World!")
 }`;
 var editor = new EditorView({
   doc: helloWorldCode,
@@ -20637,14 +20640,15 @@ var editor = new EditorView({
     basicSetup,
     jule,
     syntaxHighlighting(style),
-    keymap.of([indentWithTab])
+    keymap.of([indentWithTab]),
+    indentUnit.of("\t")
   ],
   parent: document.getElementById("editor")
 });
 var isCompiling = false;
-var runButton = document.getElementById("run-button");
+var isFormatting = false;
 runButton.onclick = () => {
-  if (isCompiling) {
+  if (isCompiling || isFormatting) {
     return;
   }
   isCompiling = true;
@@ -20673,6 +20677,45 @@ document.addEventListener("keydown", (e) => {
     runButton.click();
   }
 }, { capture: true });
+formatButton.onclick = () => {
+  if (isFormatting || isCompiling) {
+    return;
+  }
+  isFormatting = true;
+  const outputElement = document.getElementById("output");
+  const inputCode = editor.state.doc.toString();
+  fetch("/playground/format", {
+    method: "POST",
+    body: inputCode,
+    headers: { "Content-Type": "text/plain" }
+  }).then(async (res) => {
+    if (res.status >= 500) {
+      const message = await res.text();
+      throw message;
+    }
+    return res.text();
+  }).then((formattedCode) => {
+    editor.dispatch({
+      changes: {
+        from: 0,
+        to: editor.state.doc.length,
+        insert: formattedCode
+      }
+    });
+    outputElement.textContent = "Code formatted successfully.";
+    isFormatting = false;
+  }).catch((err) => {
+    outputElement.textContent = err;
+    isFormatting = false;
+  });
+  isFormatting = false;
+};
+document.addEventListener("keydown", (e) => {
+  if (e.shiftKey && e.key === "Enter") {
+    e.preventDefault();
+    formatButton.click();
+  }
+}, { capture: true });
 var examples = document.getElementById("examples");
 examples.onchange = (e) => {
   const value = e.target.value;
@@ -20680,67 +20723,66 @@ examples.onchange = (e) => {
   switch (value) {
     case "fizzbuzz":
       newCode = `fn main() {
-  mut i := 1
-  for i <= 16; i++ {
-    if i % 15 == 0 {
-      println("FizzBuzz")
-    } else if i % 3 == 0 {
-      println("Fizz")
-    } else if i % 5 == 0 {
-      println("Buzz")
-    }
-  }
+	mut i := 1
+	for i <= 16; i++ {
+		if i%15 == 0 {
+			println("FizzBuzz")
+		} else if i%3 == 0 {
+			println("Fizz")
+		} else if i%5 == 0 {
+			println("Buzz")
+		}
+	}
 }`;
       break;
     case "randomness":
       newCode = `use "std/fmt"
 use "std/math/rand"
-use "std/time"
 
 fn main() {
-  // Constants are compile-time known values
-  const min = 1
-  const max = 10
+	// Constants are compile-time known values
+	const min = 1
+	const max = 10
 
-  random_number := rand::IntN(max - min) + min
+	random_number := rand::IntN(max-min) + min
 
-  // print[ln] doesn't accept multiple arguments, so you have to use fmt::Print
-  fmt::Print("Here is a number between ", min, " and ", max, ": ")
-  println(random_number)
+	// print[ln] doesn't accept multiple arguments, so you have to use fmt::Print
+	fmt::Print("Here is a number between ", min, " and ", max, ": ")
+	println(random_number)
 }`;
       break;
     case "comptime-matching":
       newCode = `fn printKind[T](value: T) {
-  const match type T {
-  | *int:
-    println("int pointer")
-  | &int:
-    println("int reference")
-  | u32:
-    println("u32")
-  | i32:
-    println("i32")
-  | u8:
-    println("u8")
-  | cmplx128:
-    println("cmplx128")
-  | cmplx64:
-    println("cmplx64")
-  | []int:
-    println("slice of ints")
-  | [5]int:
-    println("array of 5 ints")
-  |:
-    panic("unexpected type")
-  }
+	const match type T {
+	| *int:
+		println("int pointer")
+	| &int:
+		println("int reference")
+	| u32:
+		println("u32")
+	| i32:
+		println("i32")
+	| u8:
+		println("u8")
+	| cmplx128:
+		println("cmplx128")
+	| cmplx64:
+		println("cmplx64")
+	| []int:
+		println("slice of ints")
+	| [5]int:
+		println("array of 5 ints")
+	|:
+		panic("unexpected type")
+	}
 }
 
 fn main() {
-  let x: [5]int = [1, 2, 3, 4, 5]
-  printKind(x)
-  printKind(3+4i)
-  slice := [2, 3, 4]
-  printKind(slice)
+	let x: [5]int = [1, 2, 3, 4, 5]
+	printKind(x)
+	printKind(3 + 4i)
+	slice := [2, 3, 4]
+	printKind(slice)
 }`;
       break;
   }

@@ -55,14 +55,23 @@ button {
 	height: 2em;
 	color: #333;
 	border-radius: 4px;
-	width: 10em;
+	width: 12em;
+}
+
+button:hover {
+	background-color: #ddd;
 }
 
 #output-wrapper {
 	height: 25vh;
 	display: flex;
 	flex-direction: column;
-	/*justify-content: flex-end; /* forces the div to be at the bottom of the page */
+}
+
+#output-wrapper #buttons {
+	display: flex;
+	flex-direction: row;
+	gap: 8px;
 }
 
 pre#output {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -80,7 +81,7 @@ func compileAndRunCode(w http.ResponseWriter, tempDir string) (string, bool) {
 	return "", false
 }
 
-func postHandler(w http.ResponseWriter, r *http.Request) {
+func compileHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -98,11 +99,39 @@ func postHandler(w http.ResponseWriter, r *http.Request) {
 
 	os.Chmod(tempDir, 0777)
 	codePath := filepath.Join(tempDir, "main.jule")
-	codeInput, _ := io.ReadAll(r.Body)
-	os.WriteFile(codePath, codeInput, 0644)
+	inputCode, _ := io.ReadAll(r.Body)
+	os.WriteFile(codePath, inputCode, 0644)
 
 	if outputMessage, ok := compileAndRunCode(w, tempDir); ok {
 		fmt.Fprint(w, outputMessage)
+	}
+}
+
+func formatHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	inputCode, _ := io.ReadAll(r.Body)
+
+	// When an error occurs, julefmt writes to stderr but still returns 0 as an exit code.
+	// Therefore you have to check directly stderr and stdout content.
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd := exec.Command("julefmt")
+	cmd.Stdin = strings.NewReader(string(inputCode))
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+
+	if err != nil {
+		errorMessage := fmt.Sprintf("Exit error: %v\n", err)
+		http.Error(w, errorMessage, 500)
+	} else if stderr.Len() != 0 {
+		http.Error(w, stderr.String(), 500)
+	} else if stdout.Len() != 0 {
+		fmt.Fprint(w, stdout.String())
 	}
 }
 
@@ -112,7 +141,8 @@ func main() {
 	fs := http.FileServer(http.Dir("./public"))
 	http.Handle("/playground/", http.StripPrefix("/playground/", fs))
 
-	http.HandleFunc("/playground/compile", postHandler)
+	http.HandleFunc("/playground/compile", compileHandler)
+	http.HandleFunc("/playground/format", formatHandler)
 	addr := fmt.Sprintf(":%d", *port)
 	fmt.Println("http://0.0.0.0" + addr + "/playground/")
 	log.Fatal(http.ListenAndServe(addr, nil))

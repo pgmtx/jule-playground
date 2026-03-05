@@ -20632,7 +20632,7 @@ var jule = StreamLanguage.define({
   }
 });
 var helloWorldCode = `fn main() {
-  println("Hello World!")
+	println("Hello World!")
 }`;
 var editor = new EditorView({
   doc: helloWorldCode,
@@ -20716,16 +20716,16 @@ examples.onchange = (e) => {
   switch (value) {
     case "fizzbuzz":
       newCode = `fn main() {
-  mut i := 1
-  for i <= 16; i++ {
-    if i % 15 == 0 {
-      println("FizzBuzz")
-    } else if i % 3 == 0 {
-      println("Fizz")
-    } else if i % 5 == 0 {
-      println("Buzz")
-    }
-  }
+	mut i := 1
+	for i <= 16; i++ {
+		if i%15 == 0 {
+			println("FizzBuzz")
+		} else if i%3 == 0 {
+			println("Fizz")
+		} else if i%5 == 0 {
+			println("Buzz")
+		}
+	}
 }`;
       break;
     case "randomness":
@@ -20733,49 +20733,49 @@ examples.onchange = (e) => {
 use "std/math/rand"
 
 fn main() {
-  // Constants are compile-time known values
-  const min = 1
-  const max = 10
+	// Constants are compile-time known values
+	const min = 1
+	const max = 10
 
-  random_number := rand::IntN(max - min) + min
+	random_number := rand::IntN(max-min) + min
 
-  // print[ln] doesn't accept multiple arguments, so you have to use fmt::Print
-  fmt::Print("Here is a number between ", min, " and ", max, ": ")
-  println(random_number)
+	// print[ln] doesn't accept multiple arguments, so you have to use fmt::Print
+	fmt::Print("Here is a number between ", min, " and ", max, ": ")
+	println(random_number)
 }`;
       break;
     case "comptime-matching":
       newCode = `fn printKind[T](value: T) {
-  const match type T {
-  | *int:
-    println("int pointer")
-  | &int:
-    println("int reference")
-  | u32:
-    println("u32")
-  | i32:
-    println("i32")
-  | u8:
-    println("u8")
-  | cmplx128:
-    println("cmplx128")
-  | cmplx64:
-    println("cmplx64")
-  | []int:
-    println("slice of ints")
-  | [5]int:
-    println("array of 5 ints")
-  |:
-    panic("unexpected type")
-  }
+	const match type T {
+	| *int:
+		println("int pointer")
+	| &int:
+		println("int reference")
+	| u32:
+		println("u32")
+	| i32:
+		println("i32")
+	| u8:
+		println("u8")
+	| cmplx128:
+		println("cmplx128")
+	| cmplx64:
+		println("cmplx64")
+	| []int:
+		println("slice of ints")
+	| [5]int:
+		println("array of 5 ints")
+	|:
+		panic("unexpected type")
+	}
 }
 
 fn main() {
-  let x: [5]int = [1, 2, 3, 4, 5]
-  printKind(x)
-  printKind(3+4i)
-  slice := [2, 3, 4]
-  printKind(slice)
+	let x: [5]int = [1, 2, 3, 4, 5]
+	printKind(x)
+	printKind(3 + 4i)
+	slice := [2, 3, 4]
+	printKind(slice)
 }`;
       break;
   }

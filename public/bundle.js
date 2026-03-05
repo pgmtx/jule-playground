@@ -20645,6 +20645,10 @@ var editor = new EditorView({
   ],
   parent: document.getElementById("editor")
 });
+var irEditor = new EditorView({
+  extensions: [basicSetup],
+  parent: document.getElementById("ir-editor")
+});
 var isCompiling = false;
 var isFormatting = false;
 var isTranspiling = false;

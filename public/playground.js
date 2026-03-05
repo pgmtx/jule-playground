@@ -155,6 +155,11 @@ const editor = new EditorView({
 	parent: document.getElementById("editor"),
 });
 
+const irEditor = new EditorView({
+	extensions: [basicSetup],
+	parent: document.getElementById("ir-editor"),
+});
+
 let isCompiling = false;
 let isFormatting = false;
 let isTranspiling = false;

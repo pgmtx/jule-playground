@@ -1,6 +1,7 @@
 import { indentWithTab } from "@codemirror/commands";
 import { cpp } from "@codemirror/lang-cpp";
 import {
+	foldService,
 	HighlightStyle,
 	indentUnit,
 	StreamLanguage,
@@ -145,6 +146,27 @@ const helloWorldCode = `fn main() {
 	println("Hello World!")
 }`;
 
+const braceFoldService = foldService.of((state, lineStart) => {
+	const line = state.doc.lineAt(lineStart);
+	if (!line.text.trimEnd().endsWith("{")) {
+		return null;
+	}
+
+	let depth = 0;
+	for (let i = lineStart; i < state.doc.length; ++i) {
+		const c = state.sliceDoc(i, i + 1);
+		if (c === "{") {
+			++depth;
+		} else if (c === "}") {
+			--depth;
+			if (depth === 0) {
+				return { from: line.to, to: i };
+			}
+		}
+	}
+	return null;
+});
+
 const editor = new EditorView({
 	doc: helloWorldCode,
 	extensions: [
@@ -153,6 +175,7 @@ const editor = new EditorView({
 		syntaxHighlighting(style),
 		keymap.of([indentWithTab]), // Handles the tab key
 		indentUnit.of("\t"), // To add because by default indentations add spaces
+		braceFoldService,
 	],
 	parent: document.getElementById("editor"),
 });

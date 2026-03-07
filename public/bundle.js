@@ -22301,6 +22301,25 @@ var jule = StreamLanguage.define({
 var helloWorldCode = `fn main() {
 	println("Hello World!")
 }`;
+var braceFoldService = foldService.of((state, lineStart) => {
+  const line = state.doc.lineAt(lineStart);
+  if (!line.text.trimEnd().endsWith("{")) {
+    return null;
+  }
+  let depth = 0;
+  for (let i2 = lineStart;i2 < state.doc.length; ++i2) {
+    const c = state.sliceDoc(i2, i2 + 1);
+    if (c === "{") {
+      ++depth;
+    } else if (c === "}") {
+      --depth;
+      if (depth === 0) {
+        return { from: line.to, to: i2 };
+      }
+    }
+  }
+  return null;
+});
 var editor = new EditorView({
   doc: helloWorldCode,
   extensions: [
@@ -22308,7 +22327,8 @@ var editor = new EditorView({
     jule,
     syntaxHighlighting(style),
     keymap.of([indentWithTab]),
-    indentUnit.of("\t")
+    indentUnit.of("\t"),
+    braceFoldService
   ],
   parent: document.getElementById("editor")
 });

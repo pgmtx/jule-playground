@@ -99,9 +99,18 @@ func getCodeOutput(tempDir string) (string, error) {
 	return "", errors.New(string(output))
 }
 
+func generateHttpError(w http.ResponseWriter, data map[string]string, errorMessage string) {
+	w.WriteHeader(http.StatusBadRequest)
+	data["errorMessage"] = errorMessage
+	_ = json.NewEncoder(w).Encode(data)
+}
+
 func compileHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	data := make(map[string]string)
+
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		generateHttpError(w, data, "Method not allowed")
 		return
 	}
 
@@ -110,7 +119,7 @@ func compileHandler(w http.ResponseWriter, r *http.Request) {
 
 	tempDir, err := os.MkdirTemp("", "jule-playground-")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		generateHttpError(w, data, err.Error())
 		return
 	}
 	defer func() {
@@ -121,31 +130,28 @@ func compileHandler(w http.ResponseWriter, r *http.Request) {
 	codePath := filepath.Join(tempDir, "main.jule")
 	inputCode, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		generateHttpError(w, data, err.Error())
 		return
 	}
 	if err := os.WriteFile(codePath, inputCode, 0o644); err != nil {
-		http.Error(w, "Could not write to "+codePath, http.StatusInternalServerError)
+		generateHttpError(w, data, "Could not write to "+codePath)
 		return
 	}
 
-	data := make(map[string]string)
 	irCode, err := getIrCode(tempDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		generateHttpError(w, data, err.Error())
 		return
 	}
 	data["irCode"] = irCode
 
 	codeOutput, err := getCodeOutput(tempDir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		generateHttpError(w, data, err.Error())
 		return
 	}
 	data["codeOutput"] = codeOutput
-
-	jsonBytes, _ := json.Marshal(data)
-	_, _ = fmt.Fprint(w, string(jsonBytes))
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func formatHandler(w http.ResponseWriter, r *http.Request) {

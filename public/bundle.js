@@ -22338,9 +22338,8 @@ var irEditor = new EditorView({
 });
 var isCompiling = false;
 var isFormatting = false;
-var isTranspiling = false;
 runButton.onclick = () => {
-  if (isCompiling || isFormatting || isTranspiling) {
+  if (isCompiling || isFormatting) {
     return;
   }
   isCompiling = true;
@@ -22355,15 +22354,17 @@ runButton.onclick = () => {
   }).then((res) => res.json()).then((json) => {
     const end = performance.now();
     const duration = (end - start) / 1000;
-    console.log("Compilation took", duration, "s");
-    outputElement.textContent = json.codeOutput;
-    irEditor.dispatch({
-      changes: {
-        from: 0,
-        to: irEditor.state.doc.length,
-        insert: json.irCode
-      }
-    });
+    console.log("Compilation and execution took", duration, "s");
+    outputElement.textContent = json.errorMessage ?? json.codeOutput;
+    if (json.irCode) {
+      irEditor.dispatch({
+        changes: {
+          from: 0,
+          to: irEditor.state.doc.length,
+          insert: json.irCode
+        }
+      });
+    }
     isCompiling = false;
   }).catch((err) => {
     outputElement.textContent = err;
@@ -22381,7 +22382,7 @@ function assignShortcutToButton(buttonId, shortcutEvent) {
 }
 assignShortcutToButton("run-button", (e) => e.ctrlKey && e.key === "Enter");
 formatButton.onclick = () => {
-  if (isFormatting || isCompiling || isTranspiling) {
+  if (isFormatting || isCompiling) {
     return;
   }
   isFormatting = true;

@@ -187,10 +187,9 @@ const irEditor = new EditorView({
 
 let isCompiling = false;
 let isFormatting = false;
-let isTranspiling = false;
 
 runButton.onclick = () => {
-	if (isCompiling || isFormatting || isTranspiling) {
+	if (isCompiling || isFormatting) {
 		return;
 	}
 
@@ -211,16 +210,19 @@ runButton.onclick = () => {
 		.then((json) => {
 			const end = performance.now();
 			const duration = (end - start) / 1000;
-			console.log("Compilation took", duration, "s");
-			outputElement.textContent = json.codeOutput;
+			console.log("Compilation and execution took", duration, "s");
 
-			irEditor.dispatch({
-				changes: {
-					from: 0,
-					to: irEditor.state.doc.length,
-					insert: json.irCode,
-				},
-			});
+			outputElement.textContent = json.errorMessage ?? json.codeOutput;
+
+			if (json.irCode) {
+				irEditor.dispatch({
+					changes: {
+						from: 0,
+						to: irEditor.state.doc.length,
+						insert: json.irCode,
+					},
+				});
+			}
 			isCompiling = false;
 		})
 		.catch((err) => {
@@ -248,7 +250,7 @@ function assignShortcutToButton(buttonId, shortcutEvent) {
 assignShortcutToButton("run-button", (e) => e.ctrlKey && e.key === "Enter");
 
 formatButton.onclick = () => {
-	if (isFormatting || isCompiling || isTranspiling) {
+	if (isFormatting || isCompiling) {
 		return;
 	}
 	isFormatting = true;

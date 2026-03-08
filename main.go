@@ -85,7 +85,7 @@ func getCodeOutput(tempDir string) (string, error) {
 	if ctx.Err() == context.DeadlineExceeded {
 		killCmd := exec.Command("docker", "kill", containerName)
 		_ = killCmd.Run()
-		return "", errors.New("Execution timed out after 30s. Check for infinite loops or blocking calls.")
+		return "", errors.New("execution timed out after 30s, check for infinite loops or blocking calls")
 	}
 
 	if err == nil {
@@ -94,7 +94,7 @@ func getCodeOutput(tempDir string) (string, error) {
 
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 139 {
-		return "", errors.New("Segmentation fault")
+		return "", errors.New("segmentation fault")
 	}
 	return "", errors.New(string(output))
 }
@@ -113,16 +113,21 @@ func compileHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
-	os.Chmod(tempDir, 0o777)
+	_ = os.Chmod(tempDir, 0o777)
 	codePath := filepath.Join(tempDir, "main.jule")
 	inputCode, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	os.WriteFile(codePath, inputCode, 0o644)
+	if err := os.WriteFile(codePath, inputCode, 0o644); err != nil {
+		http.Error(w, "Could not write to "+codePath, http.StatusInternalServerError)
+		return
+	}
 
 	data := make(map[string]string)
 	irCode, err := getIrCode(tempDir)
@@ -140,7 +145,7 @@ func compileHandler(w http.ResponseWriter, r *http.Request) {
 	data["codeOutput"] = codeOutput
 
 	jsonBytes, _ := json.Marshal(data)
-	fmt.Fprint(w, string(jsonBytes))
+	_, _ = fmt.Fprint(w, string(jsonBytes))
 }
 
 func formatHandler(w http.ResponseWriter, r *http.Request) {
@@ -171,7 +176,7 @@ func formatHandler(w http.ResponseWriter, r *http.Request) {
 	} else if stderr.Len() != 0 {
 		http.Error(w, stderr.String(), http.StatusInternalServerError)
 	} else if stdout.Len() != 0 {
-		fmt.Fprint(w, stdout.String())
+		_, _ = fmt.Fprint(w, stdout.String())
 	}
 }
 

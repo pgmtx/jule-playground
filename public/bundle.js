@@ -22380,6 +22380,7 @@ formatButton.onclick = () => {
   isFormatting = true;
   const outputElement = document.getElementById("output");
   const inputCode = editor.state.doc.toString();
+  outputElement.textContent = "Formatting...";
   fetch("/playground/format", {
     method: "POST",
     body: inputCode,
@@ -22413,6 +22414,7 @@ document.getElementById("transpile-button").onclick = () => {
   isTranspiling = true;
   const outputElement = document.getElementById("output");
   const inputCode = editor.state.doc.toString();
+  outputElement.textContent = "Transpiling...";
   fetch("/playground/transpile", {
     method: "POST",
     body: inputCode,
@@ -22431,6 +22433,7 @@ document.getElementById("transpile-button").onclick = () => {
         insert: formattedCode
       }
     });
+    outputElement.textContent = "Code transpiled successfully.";
     isTranspiling = false;
   }).catch((err) => {
     outputElement.textContent = err;

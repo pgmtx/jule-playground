@@ -10,4 +10,12 @@ hooks = [
     files = "^public/playground\\.js$",
     always_run = true,
   },
+  {
+      id="go-lint",
+      name="go-lint",
+      language="system",
+      entry = "golangci-lint run .",
+      pass_filenames = false,
+      types = ["go"],
+  }
 ]

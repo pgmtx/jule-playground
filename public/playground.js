@@ -205,14 +205,22 @@ runButton.onclick = () => {
 	fetch("/playground/compile", {
 		method: "POST",
 		body: inputCode,
-		headers: { "Content-Type": "text/plain" },
+		headers: { "Content-Type": "application/json" },
 	})
-		.then((res) => res.text())
-		.then((output) => {
+		.then((res) => res.json())
+		.then((json) => {
 			const end = performance.now();
 			const duration = (end - start) / 1000;
 			console.log("Compilation took", duration, "s");
-			outputElement.textContent = output;
+			outputElement.textContent = json.codeOutput;
+
+			irEditor.dispatch({
+				changes: {
+					from: 0,
+					to: irEditor.state.doc.length,
+					insert: json.irCode,
+				},
+			});
 			isCompiling = false;
 		})
 		.catch((err) => {
@@ -279,44 +287,44 @@ formatButton.onclick = () => {
 
 assignShortcutToButton("format-button", (e) => e.shiftKey && e.key === "Enter");
 
-document.getElementById("transpile-button").onclick = () => {
-	if (isTranspiling || isCompiling || isFormatting) {
-		return;
-	}
+// document.getElementById("transpile-button").onclick = () => {
+// 	if (isTranspiling || isCompiling || isFormatting) {
+// 		return;
+// 	}
 
-	isTranspiling = true;
-	const outputElement = document.getElementById("output");
-	const inputCode = editor.state.doc.toString();
-	outputElement.textContent = "Transpiling...";
+// 	isTranspiling = true;
+// 	const outputElement = document.getElementById("output");
+// 	const inputCode = editor.state.doc.toString();
+// 	outputElement.textContent = "Transpiling...";
 
-	fetch("/playground/transpile", {
-		method: "POST",
-		body: inputCode,
-		headers: { "Content-Type": "text/plain" },
-	})
-		.then(async (res) => {
-			if (res.status >= 500) {
-				const message = await res.text();
-				throw message;
-			}
-			return res.text();
-		})
-		.then((formattedCode) => {
-			irEditor.dispatch({
-				changes: {
-					from: 0,
-					to: irEditor.state.doc.length,
-					insert: formattedCode,
-				},
-			});
-			outputElement.textContent = "Code transpiled successfully.";
-			isTranspiling = false;
-		})
-		.catch((err) => {
-			outputElement.textContent = err;
-			isTranspiling = false;
-		});
-};
+// 	fetch("/playground/transpile", {
+// 		method: "POST",
+// 		body: inputCode,
+// 		headers: { "Content-Type": "text/plain" },
+// 	})
+// 		.then(async (res) => {
+// 			if (res.status >= 500) {
+// 				const message = await res.text();
+// 				throw message;
+// 			}
+// 			return res.text();
+// 		})
+// 		.then((formattedCode) => {
+// 			irEditor.dispatch({
+// 				changes: {
+// 					from: 0,
+// 					to: irEditor.state.doc.length,
+// 					insert: formattedCode,
+// 				},
+// 			});
+// 			outputElement.textContent = "Code transpiled successfully.";
+// 			isTranspiling = false;
+// 		})
+// 		.catch((err) => {
+// 			outputElement.textContent = err;
+// 			isTranspiling = false;
+// 		});
+// };
 
 const examples = document.getElementById("examples");
 examples.onchange = (e) => {

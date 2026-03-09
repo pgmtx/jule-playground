@@ -29,13 +29,23 @@ select {
 	margin-bottom: 8px;
 }
 
-#editor {
+#editors {
+	display: flex;
+	flex-direction: row;
+	flex: 1; /* Takes remaining height */
+	min-height: 0;
+}
+
+#editor,
+#ir-editor {
 	flex: 1;
+	min-width: 0;
 	min-height: 0;
 }
 
 .cm-editor {
 	height: 100%;
+	width: 100%;
 }
 
 .cm-editor .cm-content {

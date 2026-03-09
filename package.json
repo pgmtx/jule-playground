@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.2",
+    "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/language": "^6.12.1",
     "@codemirror/view": "^6.39.15",
     "@lezer/highlight": "^1.2.3",

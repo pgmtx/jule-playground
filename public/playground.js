@@ -1,10 +1,13 @@
 import { indentWithTab } from "@codemirror/commands";
+import { cpp } from "@codemirror/lang-cpp";
 import {
+	foldService,
 	HighlightStyle,
 	indentUnit,
 	StreamLanguage,
 	syntaxHighlighting,
 } from "@codemirror/language";
+import { EditorState } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { basicSetup, EditorView } from "codemirror";
@@ -143,6 +146,27 @@ const helloWorldCode = `fn main() {
 	println("Hello World!")
 }`;
 
+const braceFoldService = foldService.of((state, lineStart) => {
+	const line = state.doc.lineAt(lineStart);
+	if (!line.text.trimEnd().endsWith("{")) {
+		return null;
+	}
+
+	let depth = 0;
+	for (let i = lineStart; i < state.doc.length; ++i) {
+		const c = state.sliceDoc(i, i + 1);
+		if (c === "{") {
+			++depth;
+		} else if (c === "}") {
+			--depth;
+			if (depth === 0) {
+				return { from: line.to, to: i };
+			}
+		}
+	}
+	return null;
+});
+
 const editor = new EditorView({
 	doc: helloWorldCode,
 	extensions: [
@@ -151,14 +175,33 @@ const editor = new EditorView({
 		syntaxHighlighting(style),
 		keymap.of([indentWithTab]), // Handles the tab key
 		indentUnit.of("\t"), // To add because by default indentations add spaces
+		braceFoldService,
 	],
 	parent: document.getElementById("editor"),
+});
+
+const irEditor = new EditorView({
+	extensions: [basicSetup, EditorState.readOnly.of(true), cpp()],
+	parent: document.getElementById("ir-editor"),
 });
 
 let isCompiling = false;
 let isFormatting = false;
 
-runButton.onclick = () => {
+async function fetchJson(name, body) {
+	const response = await fetch(name, {
+		method: "POST",
+		body: body,
+		headers: { "Content-Type": "application/json" },
+	});
+	return response.json();
+}
+
+function displayLines(outputElement, lines) {
+	outputElement.textContent = lines.join("\n");
+}
+
+runButton.onclick = async () => {
 	if (isCompiling || isFormatting) {
 		return;
 	}
@@ -166,42 +209,79 @@ runButton.onclick = () => {
 	isCompiling = true;
 
 	const outputElement = document.getElementById("output");
-	outputElement.textContent = "Compiling...";
+	const lines = ["==== LOGS ====", "Transpiling..."];
+	displayLines(outputElement, lines);
 
-	const inputCode = editor.state.doc.toString();
+	try {
+		const inputCode = editor.state.doc.toString();
+		const transpileJson = await fetchJson("/playground/transpile", inputCode);
 
-	const start = performance.now();
-	fetch("/playground/compile", {
-		method: "POST",
-		body: inputCode,
-		headers: { "Content-Type": "text/plain" },
-	})
-		.then((res) => res.text())
-		.then((output) => {
-			const end = performance.now();
-			const duration = (end - start) / 1000;
-			console.log("Compilation took", duration, "s");
-			outputElement.textContent = output;
+		lines.pop();
+		lines.push(
+			transpileJson.errorMessage ?? transpileJson.transpilationDuration,
+		);
+		displayLines(outputElement, lines);
+
+		if (transpileJson.errorMessage) {
 			isCompiling = false;
-		})
-		.catch((err) => {
-			outputElement.textContent = err;
-			isCompiling = false;
+			return;
+		}
+
+		irEditor.dispatch({
+			changes: {
+				from: 0,
+				to: irEditor.state.doc.length,
+				insert: transpileJson.irCode,
+			},
 		});
+
+		lines.push("Compiling...");
+		displayLines(outputElement, lines);
+
+		const compileJson = await fetchJson(
+			"/playground/compile",
+			transpileJson.tempDir,
+		);
+
+		lines.pop();
+		lines.push(compileJson.errorMessage ?? compileJson.compilationDuration);
+		displayLines(outputElement, lines);
+
+		if (compileJson.errorMessage) {
+			isCompiling = false;
+			return;
+		}
+
+		const runJson = await fetchJson("/playground/run", transpileJson.tempDir);
+		lines.push(
+			"\n==== OUTPUT ====",
+			runJson.errorMessage ?? runJson.codeOutput,
+		);
+		displayLines(outputElement, lines);
+	} catch (error) {
+		outputElement.textContent = error;
+	} finally {
+		isCompiling = false;
+	}
 };
 
-document.addEventListener(
-	"keydown",
-	(e) => {
-		if (e.ctrlKey && e.key === "Enter") {
-			// This and the capture parameter below prevents from the newline addition
-			// inside the code editor.
-			e.preventDefault();
-			runButton.click();
-		}
-	},
-	{ capture: true },
-);
+function assignShortcutToButton(buttonId, shortcutEvent) {
+	const button = document.getElementById(buttonId);
+	document.addEventListener(
+		"keydown",
+		(e) => {
+			if (shortcutEvent(e)) {
+				// This and the capture parameter below prevents from the newline addition
+				// inside the code editor.
+				e.preventDefault();
+				button.click();
+			}
+		},
+		{ capture: true },
+	);
+}
+
+assignShortcutToButton("run-button", (e) => e.ctrlKey && e.key === "Enter");
 
 formatButton.onclick = () => {
 	if (isFormatting || isCompiling) {
@@ -210,6 +290,7 @@ formatButton.onclick = () => {
 	isFormatting = true;
 	const outputElement = document.getElementById("output");
 	const inputCode = editor.state.doc.toString();
+	outputElement.textContent = "Formatting...";
 
 	fetch("/playground/format", {
 		method: "POST",
@@ -238,20 +319,9 @@ formatButton.onclick = () => {
 			outputElement.textContent = err;
 			isFormatting = false;
 		});
-
-	isFormatting = false;
 };
 
-document.addEventListener(
-	"keydown",
-	(e) => {
-		if (e.shiftKey && e.key === "Enter") {
-			e.preventDefault();
-			formatButton.click();
-		}
-	},
-	{ capture: true },
-);
+assignShortcutToButton("format-button", (e) => e.shiftKey && e.key === "Enter");
 
 const examples = document.getElementById("examples");
 examples.onchange = (e) => {

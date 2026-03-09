@@ -1,0 +1,21 @@
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "biome-check",
+    name = "biome-check",
+    language = "system",
+    entry = "biome-musl check public/playground.js",
+    pass_filenames = false,
+    files = "^public/playground\\.js$",
+    always_run = true,
+  },
+  {
+      id="go-lint",
+      name="go-lint",
+      language="system",
+      entry = "golangci-lint run .",
+      pass_filenames = false,
+      types = ["go"],
+  }
+]

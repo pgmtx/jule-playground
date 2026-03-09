@@ -23,9 +23,32 @@ const maxConcurrentCompilations = 2
 var semaphore = make(chan struct{}, maxConcurrentCompilations)
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
+func executeIsolatedCommand(tempDir string, command string, commandArgs ...string) *exec.Cmd {
+	allArgs := []string{
+		"run",
+		"--rm",
+		"--network=none",
+		"--memory=512m",
+		"--cpus=1",
+		"--pids-limit=50", // to avoid fork bombs
+		"-u", "1000:1000", // to avoid root access
+		"--read-only",
+		"--cap-drop=ALL",
+		"--security-opt=no-new-privileges",
+		"--tmpfs=/tmp:size=128m",
+		"-v", tempDir + ":/sandbox",
+		"--workdir=/sandbox",
+		"jule-clang",
+		command,
+	}
+	allArgs = append(allArgs, commandArgs...)
+	cmd := exec.Command("docker", allArgs...)
+	cmd.Dir = tempDir
+	return cmd
+}
+
 func getIrCode(tempDir string) (string, error) {
-	transpileCmd := exec.Command("julec", "build", "--transpile", ".")
-	transpileCmd.Dir = tempDir
+	transpileCmd := executeIsolatedCommand(tempDir, "julec", "build", "--transpile", ".")
 	if output, err := transpileCmd.CombinedOutput(); err != nil {
 		// Jule error messages use ANSI color codes, so they must be filtered out for
 		// web display.
@@ -52,10 +75,8 @@ func getCodeOutput(tempDir string) (string, error) {
 
 	const programName = "program"
 	irPath := filepath.Join("dist", "ir.cpp")
-	compileCmd := exec.Command("clang++", "-Wno-everything", "--std=c++20", "-fwrapv", "-ffloat-store", "-fno-fast-math", "-fexcess-precision=standard", "-fno-rounding-math", "-ffp-contract=fast", "-O0", "-fno-strict-aliasing", "-o", programName, irPath)
-	compileCmd.Dir = tempDir
-	err := compileCmd.Run()
-	if err != nil {
+	compileCmd := executeIsolatedCommand(tempDir, "clang++", "-Wno-everything", "--std=c++20", "-fwrapv", "-ffloat-store", "-fno-fast-math", "-fexcess-precision=standard", "-fno-rounding-math", "-ffp-contract=fast", "-O0", "-fno-strict-aliasing", "-o", programName, irPath)
+	if err := compileCmd.Run(); err != nil {
 		return "", err
 	}
 

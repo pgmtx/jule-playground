@@ -197,6 +197,10 @@ async function fetchJson(name, body) {
 	return response.json();
 }
 
+function displayLines(outputElement, lines) {
+	outputElement.textContent = lines.join("\n");
+}
+
 runButton.onclick = async () => {
 	if (isCompiling || isFormatting) {
 		return;
@@ -205,19 +209,24 @@ runButton.onclick = async () => {
 	isCompiling = true;
 
 	const outputElement = document.getElementById("output");
-	outputElement.textContent = "==== LOGS ====\n";
-	outputElement.textContent += "Transpiling...\n";
+	const lines = ["==== LOGS ====", "Transpiling..."];
+	displayLines(outputElement, lines);
 
 	try {
 		const inputCode = editor.state.doc.toString();
 		const transpileJson = await fetchJson("/playground/transpile", inputCode);
+
+		lines.pop();
+		lines.push(
+			transpileJson.errorMessage ?? transpileJson.transpilationDuration,
+		);
+		displayLines(outputElement, lines);
+
 		if (transpileJson.errorMessage) {
-			outputElement.textContent += transpileJson.errorMessage;
 			isCompiling = false;
 			return;
 		}
 
-		outputElement.textContent += transpileJson.transpilationDuration + "\n";
 		irEditor.dispatch({
 			changes: {
 				from: 0,
@@ -226,25 +235,29 @@ runButton.onclick = async () => {
 			},
 		});
 
-		outputElement.textContent += "Compiling...\n";
+		lines.push("Compiling...");
+		displayLines(outputElement, lines);
 
 		const compileJson = await fetchJson(
 			"/playground/compile",
 			transpileJson.tempDir,
 		);
 
+		lines.pop();
+		lines.push(compileJson.errorMessage ?? compileJson.compilationDuration);
+		displayLines(outputElement, lines);
+
 		if (compileJson.errorMessage) {
-			outputElement.textContent += compileJson.errorMessage;
 			isCompiling = false;
 			return;
 		}
 
-		outputElement.textContent += compileJson.compilationDuration + "\n";
-
 		const runJson = await fetchJson("/playground/run", transpileJson.tempDir);
-		outputElement.textContent += "\n==== OUTPUT ====\n";
-		outputElement.textContent +=
-			(runJson.errorMessage ?? runJson.codeOutput) + "\n";
+		lines.push(
+			"\n==== OUTPUT ====",
+			runJson.errorMessage ?? runJson.codeOutput,
+		);
+		displayLines(outputElement, lines);
 	} catch (error) {
 		outputElement.textContent = error;
 	} finally {

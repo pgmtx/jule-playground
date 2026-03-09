@@ -19,6 +19,7 @@ import (
 )
 
 const maxConcurrentCompilations = 2
+const programName = "program"
 
 var semaphore = make(chan struct{}, maxConcurrentCompilations)
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -47,8 +48,9 @@ func executeIsolatedCommand(tempDir string, command string, commandArgs ...strin
 	return cmd
 }
 
-func getIrCode(tempDir string) (string, error) {
+func getIrCode(tempDir string, data map[string]string) error {
 	transpileCmd := executeIsolatedCommand(tempDir, "julec", "build", "--transpile", ".")
+	start := time.Now()
 	if output, err := transpileCmd.CombinedOutput(); err != nil {
 		// Jule error messages use ANSI color codes, so they must be filtered out for
 		// web display.
@@ -57,28 +59,46 @@ func getIrCode(tempDir string) (string, error) {
 		// For some reason in some error messages there is a null character
 		// which is displayed as a square.
 		outputMessage = strings.ReplaceAll(outputMessage, "\x00", "")
-		return "", errors.New(outputMessage)
+		return errors.New(outputMessage)
 	}
+	duration := time.Since(start)
+	data["transpilationDuration"] = fmt.Sprintf("Transpilation took %dms", duration.Milliseconds())
 
 	irPath := filepath.Join(tempDir, "dist", "ir.cpp")
 	irCode, err := os.ReadFile(irPath)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	return string(irCode), nil
+	data["irCode"] = string(irCode)
+	return nil
+}
+
+func compileIrCode(tempDir string) error {
+	irPath := filepath.Join("dist", "ir.cpp")
+	compileCmd := executeIsolatedCommand(
+		tempDir,
+		"clang++",
+		"-Wno-everything",
+		"--std=c++20",
+		"-fwrapv",
+		"-ffloat-store",
+		"-fno-fast-math",
+		"-fexcess-precision=standard",
+		"-fno-rounding-math",
+		"-ffp-contract=fast",
+		"-O0",
+		"-fno-strict-aliasing",
+		"-o",
+		programName,
+		irPath,
+	)
+	return compileCmd.Run()
 }
 
 func getCodeOutput(tempDir string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
-	const programName = "program"
-	irPath := filepath.Join("dist", "ir.cpp")
-	compileCmd := executeIsolatedCommand(tempDir, "clang++", "-Wno-everything", "--std=c++20", "-fwrapv", "-ffloat-store", "-fno-fast-math", "-fexcess-precision=standard", "-fno-rounding-math", "-ffp-contract=fast", "-O0", "-fno-strict-aliasing", "-o", programName, irPath)
-	if err := compileCmd.Run(); err != nil {
-		return "", err
-	}
 
 	containerName := filepath.Base(tempDir)
 	runCmd := exec.CommandContext(
@@ -126,7 +146,7 @@ func generateHttpError(w http.ResponseWriter, data map[string]string, errorMessa
 	_ = json.NewEncoder(w).Encode(data)
 }
 
-func compileHandler(w http.ResponseWriter, r *http.Request) {
+func transpileHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	data := make(map[string]string)
 
@@ -143,9 +163,6 @@ func compileHandler(w http.ResponseWriter, r *http.Request) {
 		generateHttpError(w, data, err.Error())
 		return
 	}
-	defer func() {
-		_ = os.RemoveAll(tempDir)
-	}()
 
 	_ = os.Chmod(tempDir, 0o777)
 	codePath := filepath.Join(tempDir, "main.jule")
@@ -159,12 +176,60 @@ func compileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	irCode, err := getIrCode(tempDir)
+	if err := getIrCode(tempDir, data); err != nil {
+		generateHttpError(w, data, err.Error())
+		return
+	}
+	data["tempDir"] = tempDir
+	_ = json.NewEncoder(w).Encode(data)
+}
+
+func compileHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	data := make(map[string]string)
+
+	if r.Method != http.MethodPost {
+		generateHttpError(w, data, "Method not allowed")
+		return
+	}
+
+	tempDirBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		generateHttpError(w, data, err.Error())
 		return
 	}
-	data["irCode"] = irCode
+	tempDir := string(tempDirBytes)
+
+	start := time.Now()
+	if err := compileIrCode(tempDir); err != nil {
+		generateHttpError(w, data, err.Error())
+		return
+	}
+	duration := time.Since(start)
+	data["compilationDuration"] = fmt.Sprintf("Compilation took %.2fs", duration.Seconds())
+	data["tempDir"] = tempDir
+	_ = json.NewEncoder(w).Encode(data)
+}
+
+func runHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	data := make(map[string]string)
+
+	if r.Method != http.MethodPost {
+		generateHttpError(w, data, "Method not allowed")
+		return
+	}
+
+	tempDirBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		generateHttpError(w, data, err.Error())
+		return
+	}
+	tempDir := string(tempDirBytes)
+
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	codeOutput, err := getCodeOutput(tempDir)
 	if err != nil {
@@ -198,7 +263,7 @@ func formatHandler(w http.ResponseWriter, r *http.Request) {
 	err = cmd.Run()
 
 	if err != nil {
-		errorMessage := fmt.Sprintf("Exit error: %v\n", err)
+		errorMessage := fmt.Sprintf("Exit error: %v", err)
 		http.Error(w, errorMessage, http.StatusInternalServerError)
 	} else if stderr.Len() != 0 {
 		http.Error(w, stderr.String(), http.StatusInternalServerError)
@@ -213,8 +278,11 @@ func main() {
 	fs := http.FileServer(http.Dir("./public"))
 	http.Handle("/playground/", http.StripPrefix("/playground/", fs))
 
+	http.HandleFunc("/playground/transpile", transpileHandler)
 	http.HandleFunc("/playground/compile", compileHandler)
+	http.HandleFunc("/playground/run", runHandler)
 	http.HandleFunc("/playground/format", formatHandler)
+
 	addr := fmt.Sprintf(":%d", *port)
 	fmt.Println("http://0.0.0.0" + addr + "/playground/")
 	log.Fatal(http.ListenAndServe(addr, nil))

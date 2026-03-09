@@ -22344,27 +22344,50 @@ runButton.onclick = () => {
   }
   isCompiling = true;
   const outputElement = document.getElementById("output");
-  outputElement.textContent = "Compiling...";
+  outputElement.textContent = `==== LOGS ====
+`;
+  outputElement.textContent += `Transpiling...
+`;
   const inputCode = editor.state.doc.toString();
-  const start = performance.now();
-  fetch("/playground/compile", {
+  fetch("/playground/transpile", {
     method: "POST",
     body: inputCode,
     headers: { "Content-Type": "application/json" }
   }).then((res) => res.json()).then((json) => {
-    const end = performance.now();
-    const duration = (end - start) / 1000;
-    console.log("Compilation and execution took", duration, "s");
-    outputElement.textContent = json.errorMessage ?? json.codeOutput;
-    if (json.irCode) {
-      irEditor.dispatch({
-        changes: {
-          from: 0,
-          to: irEditor.state.doc.length,
-          insert: json.irCode
-        }
-      });
+    outputElement.textContent += (json.errorMessage ?? json.transpilationDuration) + `
+`;
+    if (!json.irCode) {
+      isCompiling = false;
+      return;
     }
+    irEditor.dispatch({
+      changes: {
+        from: 0,
+        to: irEditor.state.doc.length,
+        insert: json.irCode
+      }
+    });
+    outputElement.textContent += `Compiling...
+`;
+    fetch("/playground/compile", {
+      method: "POST",
+      body: json.tempDir,
+      headers: { "Content-Type": "application/json" }
+    }).then((res) => res.json()).then((json2) => {
+      outputElement.textContent += (json2.errorMessage ?? json2.compilationDuration) + `
+`;
+      fetch("/playground/run", {
+        method: "POST",
+        body: json2.tempDir,
+        headers: { "Content-Type": "application/json" }
+      }).then((res) => res.json()).then((json3) => {
+        outputElement.textContent += `
+==== OUTPUT ====
+`;
+        outputElement.textContent += (json3.errorMessage ?? json3.codeOutput) + `
+`;
+      });
+    });
     isCompiling = false;
   }).catch((err) => {
     outputElement.textContent = err;

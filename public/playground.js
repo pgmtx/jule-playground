@@ -196,33 +196,55 @@ runButton.onclick = () => {
 	isCompiling = true;
 
 	const outputElement = document.getElementById("output");
-	outputElement.textContent = "Compiling...";
-
+	outputElement.textContent = "==== LOGS ====\n";
+	outputElement.textContent += "Transpiling...\n";
 	const inputCode = editor.state.doc.toString();
 
-	const start = performance.now();
-	fetch("/playground/compile", {
+	fetch("/playground/transpile", {
 		method: "POST",
 		body: inputCode,
 		headers: { "Content-Type": "application/json" },
 	})
 		.then((res) => res.json())
 		.then((json) => {
-			const end = performance.now();
-			const duration = (end - start) / 1000;
-			console.log("Compilation and execution took", duration, "s");
-
-			outputElement.textContent = json.errorMessage ?? json.codeOutput;
-
-			if (json.irCode) {
-				irEditor.dispatch({
-					changes: {
-						from: 0,
-						to: irEditor.state.doc.length,
-						insert: json.irCode,
-					},
-				});
+			outputElement.textContent +=
+				(json.errorMessage ?? json.transpilationDuration) + "\n";
+			if (!json.irCode) {
+				isCompiling = false;
+				return;
 			}
+
+			irEditor.dispatch({
+				changes: {
+					from: 0,
+					to: irEditor.state.doc.length,
+					insert: json.irCode,
+				},
+			});
+
+			outputElement.textContent += "Compiling...\n";
+
+			fetch("/playground/compile", {
+				method: "POST",
+				body: json.tempDir,
+				headers: { "Content-Type": "application/json" },
+			})
+				.then((res) => res.json())
+				.then((json) => {
+					outputElement.textContent +=
+						(json.errorMessage ?? json.compilationDuration) + "\n";
+					fetch("/playground/run", {
+						method: "POST",
+						body: json.tempDir,
+						headers: { "Content-Type": "application/json" },
+					})
+						.then((res) => res.json())
+						.then((json) => {
+							outputElement.textContent += "\n==== OUTPUT ====\n";
+							outputElement.textContent +=
+								(json.errorMessage ?? json.codeOutput) + "\n";
+						});
+				});
 			isCompiling = false;
 		})
 		.catch((err) => {

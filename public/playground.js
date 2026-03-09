@@ -188,7 +188,16 @@ const irEditor = new EditorView({
 let isCompiling = false;
 let isFormatting = false;
 
-runButton.onclick = () => {
+async function fetchJson(name, body) {
+	const response = await fetch(name, {
+		method: "POST",
+		body: body,
+		headers: { "Content-Type": "application/json" },
+	});
+	return response.json();
+}
+
+runButton.onclick = async () => {
 	if (isCompiling || isFormatting) {
 		return;
 	}
@@ -198,59 +207,49 @@ runButton.onclick = () => {
 	const outputElement = document.getElementById("output");
 	outputElement.textContent = "==== LOGS ====\n";
 	outputElement.textContent += "Transpiling...\n";
-	const inputCode = editor.state.doc.toString();
 
-	fetch("/playground/transpile", {
-		method: "POST",
-		body: inputCode,
-		headers: { "Content-Type": "application/json" },
-	})
-		.then((res) => res.json())
-		.then((json) => {
-			outputElement.textContent +=
-				(json.errorMessage ?? json.transpilationDuration) + "\n";
-			if (!json.irCode) {
-				isCompiling = false;
-				return;
-			}
-
-			irEditor.dispatch({
-				changes: {
-					from: 0,
-					to: irEditor.state.doc.length,
-					insert: json.irCode,
-				},
-			});
-
-			outputElement.textContent += "Compiling...\n";
-
-			fetch("/playground/compile", {
-				method: "POST",
-				body: json.tempDir,
-				headers: { "Content-Type": "application/json" },
-			})
-				.then((res) => res.json())
-				.then((json) => {
-					outputElement.textContent +=
-						(json.errorMessage ?? json.compilationDuration) + "\n";
-					fetch("/playground/run", {
-						method: "POST",
-						body: json.tempDir,
-						headers: { "Content-Type": "application/json" },
-					})
-						.then((res) => res.json())
-						.then((json) => {
-							outputElement.textContent += "\n==== OUTPUT ====\n";
-							outputElement.textContent +=
-								(json.errorMessage ?? json.codeOutput) + "\n";
-						});
-				});
+	try {
+		const inputCode = editor.state.doc.toString();
+		const transpileJson = await fetchJson("/playground/transpile", inputCode);
+		if (transpileJson.errorMessage) {
+			outputElement.textContent += transpileJson.errorMessage;
 			isCompiling = false;
-		})
-		.catch((err) => {
-			outputElement.textContent = err;
-			isCompiling = false;
+			return;
+		}
+
+		outputElement.textContent += transpileJson.transpilationDuration + "\n";
+		irEditor.dispatch({
+			changes: {
+				from: 0,
+				to: irEditor.state.doc.length,
+				insert: transpileJson.irCode,
+			},
 		});
+
+		outputElement.textContent += "Compiling...\n";
+
+		const compileJson = await fetchJson(
+			"/playground/compile",
+			transpileJson.tempDir,
+		);
+
+		if (compileJson.errorMessage) {
+			outputElement.textContent += compileJson.errorMessage;
+			isCompiling = false;
+			return;
+		}
+
+		outputElement.textContent += compileJson.compilationDuration + "\n";
+
+		const runJson = await fetchJson("/playground/run", transpileJson.tempDir);
+		outputElement.textContent += "\n==== OUTPUT ====\n";
+		outputElement.textContent +=
+			(runJson.errorMessage ?? runJson.codeOutput) + "\n";
+	} catch (error) {
+		outputElement.textContent = error;
+	} finally {
+		isCompiling = false;
+	}
 };
 
 function assignShortcutToButton(buttonId, shortcutEvent) {

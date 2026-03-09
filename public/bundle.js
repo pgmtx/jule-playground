@@ -22338,7 +22338,15 @@ var irEditor = new EditorView({
 });
 var isCompiling = false;
 var isFormatting = false;
-runButton.onclick = () => {
+async function fetchJson(name2, body) {
+  const response = await fetch(name2, {
+    method: "POST",
+    body,
+    headers: { "Content-Type": "application/json" }
+  });
+  return response.json();
+}
+runButton.onclick = async () => {
   if (isCompiling || isFormatting) {
     return;
   }
@@ -22348,51 +22356,44 @@ runButton.onclick = () => {
 `;
   outputElement.textContent += `Transpiling...
 `;
-  const inputCode = editor.state.doc.toString();
-  fetch("/playground/transpile", {
-    method: "POST",
-    body: inputCode,
-    headers: { "Content-Type": "application/json" }
-  }).then((res) => res.json()).then((json) => {
-    outputElement.textContent += (json.errorMessage ?? json.transpilationDuration) + `
-`;
-    if (!json.irCode) {
+  try {
+    const inputCode = editor.state.doc.toString();
+    const transpileJson = await fetchJson("/playground/transpile", inputCode);
+    if (transpileJson.errorMessage) {
+      outputElement.textContent += transpileJson.errorMessage;
       isCompiling = false;
       return;
     }
+    outputElement.textContent += transpileJson.transpilationDuration + `
+`;
     irEditor.dispatch({
       changes: {
         from: 0,
         to: irEditor.state.doc.length,
-        insert: json.irCode
+        insert: transpileJson.irCode
       }
     });
     outputElement.textContent += `Compiling...
 `;
-    fetch("/playground/compile", {
-      method: "POST",
-      body: json.tempDir,
-      headers: { "Content-Type": "application/json" }
-    }).then((res) => res.json()).then((json2) => {
-      outputElement.textContent += (json2.errorMessage ?? json2.compilationDuration) + `
+    const compileJson = await fetchJson("/playground/compile", transpileJson.tempDir);
+    if (compileJson.errorMessage) {
+      outputElement.textContent += compileJson.errorMessage;
+      isCompiling = false;
+      return;
+    }
+    outputElement.textContent += compileJson.compilationDuration + `
 `;
-      fetch("/playground/run", {
-        method: "POST",
-        body: json2.tempDir,
-        headers: { "Content-Type": "application/json" }
-      }).then((res) => res.json()).then((json3) => {
-        outputElement.textContent += `
+    const runJson = await fetchJson("/playground/run", transpileJson.tempDir);
+    outputElement.textContent += `
 ==== OUTPUT ====
 `;
-        outputElement.textContent += (json3.errorMessage ?? json3.codeOutput) + `
+    outputElement.textContent += (runJson.errorMessage ?? runJson.codeOutput) + `
 `;
-      });
-    });
+  } catch (error) {
+    outputElement.textContent = error;
+  } finally {
     isCompiling = false;
-  }).catch((err) => {
-    outputElement.textContent = err;
-    isCompiling = false;
-  });
+  }
 };
 function assignShortcutToButton(buttonId, shortcutEvent) {
   const button = document.getElementById(buttonId);

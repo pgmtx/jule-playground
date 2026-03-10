@@ -22355,6 +22355,7 @@ runButton.onclick = async () => {
     return;
   }
   isCompiling = true;
+  console.log(document.getElementById("build-arguments").value);
   const outputElement = document.getElementById("output");
   const lines = ["==== LOGS ====", "Transpiling..."];
   displayLines(outputElement, lines);

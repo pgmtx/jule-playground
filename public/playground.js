@@ -207,6 +207,7 @@ runButton.onclick = async () => {
 	}
 
 	isCompiling = true;
+	console.log(document.getElementById("build-arguments").value);
 
 	const outputElement = document.getElementById("output");
 	const lines = ["==== LOGS ====", "Transpiling..."];

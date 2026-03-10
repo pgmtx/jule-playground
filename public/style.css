@@ -29,6 +29,16 @@ select {
 	margin-bottom: 8px;
 }
 
+#build-arguments-wrapper {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+input[type="text"] {
+	width: 20%;
+}
+
 #editors {
 	display: flex;
 	flex-direction: row;

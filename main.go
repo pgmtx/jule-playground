@@ -48,8 +48,11 @@ func executeIsolatedCommand(tempDir string, command string, commandArgs ...strin
 	return cmd
 }
 
-func getIrCode(tempDir string, data map[string]string) error {
-	transpileCmd := executeIsolatedCommand(tempDir, "julec", "build", "--transpile", ".")
+func getIrCode(tempDir string, data map[string]string, buildArguments []string) error {
+	commandArgs := []string{"build", "--transpile", "."}
+	commandArgs = append(commandArgs, buildArguments...)
+
+	transpileCmd := executeIsolatedCommand(tempDir, "julec", commandArgs...)
 	start := time.Now()
 	if output, err := transpileCmd.CombinedOutput(); err != nil {
 		// Jule error messages use ANSI color codes, so they must be filtered out for
@@ -170,17 +173,35 @@ func transpileHandler(w http.ResponseWriter, r *http.Request) {
 
 	_ = os.Chmod(tempDir, 0o777)
 	codePath := filepath.Join(tempDir, "main.jule")
-	inputCode, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		generateHttpError(w, data, err.Error())
 		return
 	}
-	if err := os.WriteFile(codePath, inputCode, 0o644); err != nil {
+
+	var info map[string]string
+	if err := json.Unmarshal(body, &info); err != nil {
+		generateHttpError(w, data, "Could not parse body parameters")
+		return
+	}
+
+	inputCode, ok := info["inputCode"]
+	if !ok {
+		generateHttpError(w, data, "Could not find the required body parameter 'inputCode'")
+		return
+	}
+
+	buildArguments := make([]string, 0)
+	if args, ok := info["buildArguments"]; ok {
+		buildArguments = strings.Fields(args)
+	}
+
+	if err := os.WriteFile(codePath, []byte(inputCode), 0o644); err != nil {
 		generateHttpError(w, data, "Could not write to "+codePath)
 		return
 	}
 
-	if err := getIrCode(tempDir, data); err != nil {
+	if err := getIrCode(tempDir, data, buildArguments); err != nil {
 		generateHttpError(w, data, err.Error())
 		return
 	}

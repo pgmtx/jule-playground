@@ -22355,13 +22355,16 @@ runButton.onclick = async () => {
     return;
   }
   isCompiling = true;
-  console.log(document.getElementById("build-arguments").value);
+  const transpileBody = { inputCode: editor.state.doc.toString() };
+  const buildArguments = document.getElementById("build-arguments").value.trim();
+  if (buildArguments) {
+    transpileBody.buildArguments = buildArguments;
+  }
   const outputElement = document.getElementById("output");
   const lines = ["==== LOGS ====", "Transpiling..."];
   displayLines(outputElement, lines);
   try {
-    const inputCode = editor.state.doc.toString();
-    const transpileJson = await fetchJson("/playground/transpile", inputCode);
+    const transpileJson = await fetchJson("/playground/transpile", JSON.stringify(transpileBody));
     lines.pop();
     lines.push(transpileJson.errorMessage ?? transpileJson.transpilationDuration);
     displayLines(outputElement, lines);

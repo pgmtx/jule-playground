@@ -93,7 +93,11 @@ func compileIrCode(tempDir string) error {
 		programName,
 		irPath,
 	)
-	return compileCmd.Run()
+	output, err := compileCmd.CombinedOutput()
+	if err != nil {
+		return errors.New(string(output))
+	}
+	return nil
 }
 
 func getCodeOutput(tempDir string) (string, error) {

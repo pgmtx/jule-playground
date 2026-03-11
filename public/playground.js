@@ -207,7 +207,7 @@ runButton.onclick = async () => {
 	}
 
 	if (document.getElementById("auto-format").checked) {
-		formatCode(false);
+		await formatCode(false);
 	}
 
 	isCompiling = true;
@@ -298,46 +298,46 @@ function assignShortcutToButton(buttonId, shortcutEvent) {
 
 assignShortcutToButton("run-button", (e) => e.ctrlKey && e.key === "Enter");
 
-function formatCode(editOutput = true) {
+async function formatCode(editOutput = true) {
 	if (isFormatting || isCompiling) {
 		return;
 	}
+
 	isFormatting = true;
 	const outputElement = document.getElementById("output");
 	const inputCode = editor.state.doc.toString();
 	outputElement.textContent = "Formatting...";
 
-	fetch("/playground/format", {
-		method: "POST",
-		body: inputCode,
-		headers: { "Content-Type": "text/plain" },
-	})
-		.then(async (res) => {
-			if (res.status >= 500) {
-				const message = await res.text();
-				throw message;
-			}
-			return res.text();
-		})
-		.then((formattedCode) => {
-			editor.dispatch({
-				changes: {
-					from: 0,
-					to: editor.state.doc.length,
-					insert: formattedCode,
-				},
-			});
-			if (editOutput) {
-				outputElement.textContent = "Code formatted successfully.";
-			}
-			isFormatting = false;
-		})
-		.catch((err) => {
-			if (editOutput) {
-				outputElement.textContent = err;
-			}
-			isFormatting = false;
+	try {
+		const response = await fetch("/playground/format", {
+			method: "POST",
+			body: inputCode,
+			headers: { "Content-Type": "text/plain" },
 		});
+
+		const message = await response.text();
+		if (response.status >= 500) {
+			throw message;
+		}
+
+		editor.dispatch({
+			changes: {
+				from: 0,
+				to: editor.state.doc.length,
+				insert: message,
+			},
+		});
+
+		if (editOutput) {
+			outputElement.textContent = "Code formatted successfully.";
+		}
+	} catch (error) {
+		if (editOutput) {
+			outputElement.textContent = error;
+		}
+	} finally {
+		isFormatting = false;
+	}
 }
 
 formatButton.onclick = formatCode;

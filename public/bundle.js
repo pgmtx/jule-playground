@@ -22354,6 +22354,7 @@ runButton.onclick = async () => {
   if (isCompiling || isFormatting) {
     return;
   }
+  runButton.disabled = true;
   if (document.getElementById("auto-format").checked) {
     await formatCode(false);
   }
@@ -22372,7 +22373,6 @@ runButton.onclick = async () => {
     lines.push(transpileJson.errorMessage ?? transpileJson.transpilationDuration);
     displayLines(outputElement, lines);
     if (transpileJson.errorMessage) {
-      isCompiling = false;
       return;
     }
     irEditor.dispatch({
@@ -22389,7 +22389,6 @@ runButton.onclick = async () => {
     lines.push(compileJson.errorMessage ?? compileJson.compilationDuration);
     displayLines(outputElement, lines);
     if (compileJson.errorMessage) {
-      isCompiling = false;
       return;
     }
     const runJson = await fetchJson("/playground/run", transpileJson.tempDir);
@@ -22400,6 +22399,8 @@ runButton.onclick = async () => {
     outputElement.textContent = error;
   } finally {
     isCompiling = false;
+    runButton.disabled = false;
+    formatButton.disabled = false;
   }
 };
 function assignShortcutToButton(buttonId, shortcutEvent) {
@@ -22417,9 +22418,16 @@ async function formatCode(editOutput = true) {
     return;
   }
   isFormatting = true;
+  formatButton.disabled = true;
+  const formatButtonPressed = !runButton.disabled;
+  if (formatButtonPressed) {
+    runButton.disabled = true;
+  }
   const outputElement = document.getElementById("output");
   const inputCode = editor.state.doc.toString();
-  outputElement.textContent = "Formatting...";
+  if (editOutput) {
+    outputElement.textContent = "Formatting...";
+  }
   try {
     const response = await fetch("/playground/format", {
       method: "POST",
@@ -22446,6 +22454,10 @@ async function formatCode(editOutput = true) {
     }
   } finally {
     isFormatting = false;
+    if (formatButtonPressed) {
+      formatButton.disabled = false;
+      runButton.disabled = false;
+    }
   }
 }
 formatButton.onclick = formatCode;

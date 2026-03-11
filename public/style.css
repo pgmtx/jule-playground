@@ -78,8 +78,12 @@ button {
 	width: 12em;
 }
 
-button:hover {
+button:hover:enabled {
 	background-color: #ddd;
+}
+
+button:hover:disabled {
+	cursor: default;
 }
 
 #output-wrapper {

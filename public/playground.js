@@ -206,10 +206,10 @@ runButton.onclick = async () => {
 		return;
 	}
 
+	runButton.disabled = true;
 	if (document.getElementById("auto-format").checked) {
 		await formatCode(false);
 	}
-
 	isCompiling = true;
 
 	const transpileBody = { inputCode: editor.state.doc.toString() };
@@ -238,7 +238,6 @@ runButton.onclick = async () => {
 		displayLines(outputElement, lines);
 
 		if (transpileJson.errorMessage) {
-			isCompiling = false;
 			return;
 		}
 
@@ -263,7 +262,6 @@ runButton.onclick = async () => {
 		displayLines(outputElement, lines);
 
 		if (compileJson.errorMessage) {
-			isCompiling = false;
 			return;
 		}
 
@@ -277,6 +275,8 @@ runButton.onclick = async () => {
 		outputElement.textContent = error;
 	} finally {
 		isCompiling = false;
+		runButton.disabled = false;
+		formatButton.disabled = false;
 	}
 };
 
@@ -304,9 +304,17 @@ async function formatCode(editOutput = true) {
 	}
 
 	isFormatting = true;
+	formatButton.disabled = true;
+	const formatButtonPressed = !runButton.disabled;
+	if (formatButtonPressed) {
+		runButton.disabled = true;
+	}
 	const outputElement = document.getElementById("output");
 	const inputCode = editor.state.doc.toString();
-	outputElement.textContent = "Formatting...";
+
+	if (editOutput) {
+		outputElement.textContent = "Formatting...";
+	}
 
 	try {
 		const response = await fetch("/playground/format", {
@@ -337,6 +345,10 @@ async function formatCode(editOutput = true) {
 		}
 	} finally {
 		isFormatting = false;
+		if (formatButtonPressed) {
+			formatButton.disabled = false;
+			runButton.disabled = false;
+		}
 	}
 }
 

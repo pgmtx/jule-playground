@@ -206,6 +206,10 @@ runButton.onclick = async () => {
 		return;
 	}
 
+	if (document.getElementById("auto-format").checked) {
+		formatCode(false);
+	}
+
 	isCompiling = true;
 
 	const transpileBody = { inputCode: editor.state.doc.toString() };
@@ -294,7 +298,7 @@ function assignShortcutToButton(buttonId, shortcutEvent) {
 
 assignShortcutToButton("run-button", (e) => e.ctrlKey && e.key === "Enter");
 
-formatButton.onclick = () => {
+function formatCode(editOutput = true) {
 	if (isFormatting || isCompiling) {
 		return;
 	}
@@ -323,15 +327,20 @@ formatButton.onclick = () => {
 					insert: formattedCode,
 				},
 			});
-			outputElement.textContent = "Code formatted successfully.";
+			if (editOutput) {
+				outputElement.textContent = "Code formatted successfully.";
+			}
 			isFormatting = false;
 		})
 		.catch((err) => {
-			outputElement.textContent = err;
+			if (editOutput) {
+				outputElement.textContent = err;
+			}
 			isFormatting = false;
 		});
-};
+}
 
+formatButton.onclick = formatCode;
 assignShortcutToButton("format-button", (e) => e.shiftKey && e.key === "Enter");
 
 const examples = document.getElementById("examples");

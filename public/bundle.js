@@ -22354,6 +22354,9 @@ runButton.onclick = async () => {
   if (isCompiling || isFormatting) {
     return;
   }
+  if (document.getElementById("auto-format").checked) {
+    formatCode(false);
+  }
   isCompiling = true;
   const transpileBody = { inputCode: editor.state.doc.toString() };
   const buildArguments = document.getElementById("build-arguments").value.trim();
@@ -22409,7 +22412,7 @@ function assignShortcutToButton(buttonId, shortcutEvent) {
   }, { capture: true });
 }
 assignShortcutToButton("run-button", (e) => e.ctrlKey && e.key === "Enter");
-formatButton.onclick = () => {
+function formatCode(editOutput = true) {
   if (isFormatting || isCompiling) {
     return;
   }
@@ -22435,13 +22438,18 @@ formatButton.onclick = () => {
         insert: formattedCode
       }
     });
-    outputElement.textContent = "Code formatted successfully.";
+    if (editOutput) {
+      outputElement.textContent = "Code formatted successfully.";
+    }
     isFormatting = false;
   }).catch((err) => {
-    outputElement.textContent = err;
+    if (editOutput) {
+      outputElement.textContent = err;
+    }
     isFormatting = false;
   });
-};
+}
+formatButton.onclick = formatCode;
 assignShortcutToButton("format-button", (e) => e.shiftKey && e.key === "Enter");
 var examples = document.getElementById("examples");
 examples.onchange = (e) => {

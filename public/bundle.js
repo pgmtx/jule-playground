@@ -22197,7 +22197,7 @@ var types2 = [
   "u64",
   "f32",
   "f64",
-  "str",
+  "string",
   "any",
   "rune",
   "byte",
@@ -22207,6 +22207,7 @@ var types2 = [
 ];
 var typeRegex = new RegExp(`\\b(${types2.join("|")})\\b`);
 var keywords = [
+  "map",
   "type",
   "impl",
   "self",
@@ -22216,7 +22217,6 @@ var keywords = [
   "fn",
   "const",
   "let",
-  "static",
   "mut",
   "for",
   "in",
@@ -22227,8 +22227,9 @@ var keywords = [
   "fall",
   "if",
   "else",
-  "ret",
+  "return",
   "error",
+  "throw",
   "use",
   "co",
   "extern",

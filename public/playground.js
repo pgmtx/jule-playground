@@ -35,7 +35,7 @@ const types = [
 	"u64",
 	"f32",
 	"f64",
-	"str",
+	"string",
 	"any",
 	"rune",
 	"byte",
@@ -47,6 +47,7 @@ const types = [
 const typeRegex = new RegExp(`\\b(${types.join("|")})\\b`);
 
 const keywords = [
+	"map",
 	"type",
 	"impl",
 	"self",
@@ -56,7 +57,6 @@ const keywords = [
 	"fn",
 	"const",
 	"let",
-	"static",
 	"mut",
 	"for",
 	"in",
@@ -67,8 +67,9 @@ const keywords = [
 	"fall",
 	"if",
 	"else",
-	"ret",
+	"return",
 	"error",
+	"throw",
 	"use",
 	"co",
 	"extern",

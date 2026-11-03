@@ -58,6 +58,7 @@ func getIrCode(tempDir string, data map[string]string, buildArguments []string) 
 	transpileCmd := executeIsolatedCommand(tempDir, false, "julec", commandArgs...)
 	start := time.Now()
 	if output, err := transpileCmd.CombinedOutput(); err != nil {
+		_ = os.RemoveAll(tempDir)
 		// Jule error messages use ANSI color codes, so they must be filtered out for
 		// web display.
 		outputMessage := ansi.ReplaceAllString(string(output), "")
@@ -68,7 +69,7 @@ func getIrCode(tempDir string, data map[string]string, buildArguments []string) 
 		return errors.New(outputMessage)
 	}
 	duration := time.Since(start)
-	data["transpilationDuration"] = fmt.Sprintf("Transpilation took %dms", duration.Milliseconds())
+	data["transpilationDuration"] = fmt.Sprintf("Transpilation took %d ms", duration.Milliseconds())
 
 	irPath := filepath.Join(tempDir, "dist", "ir.cpp")
 	irCode, err := os.ReadFile(irPath)
@@ -102,6 +103,7 @@ func compileIrCode(tempDir string) error {
 	)
 	output, err := compileCmd.CombinedOutput()
 	if err != nil {
+		_ = os.RemoveAll(tempDir)
 		return errors.New(string(output))
 	}
 	return nil
@@ -227,6 +229,7 @@ func compileHandler(w http.ResponseWriter, r *http.Request) {
 		generateHttpError(w, data, err.Error())
 		return
 	}
+
 	tempDir := string(tempDirBytes)
 
 	start := time.Now()
@@ -235,7 +238,7 @@ func compileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	duration := time.Since(start)
-	data["compilationDuration"] = fmt.Sprintf("Compilation took %.2fs", duration.Seconds())
+	data["compilationDuration"] = fmt.Sprintf("Compilation took %.2f s", duration.Seconds())
 	data["tempDir"] = tempDir
 	_ = json.NewEncoder(w).Encode(data)
 }
@@ -286,8 +289,16 @@ func formatHandler(w http.ResponseWriter, r *http.Request) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	tempDir, _ := os.MkdirTemp("", "jule-playground-")
+	tempDir, err := os.MkdirTemp("", "jule-playground-")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
+	_ = os.Chmod(tempDir, 0o777)
 	cmd := executeIsolatedCommand(tempDir, true, "julefmt")
 	cmd.Stdin = strings.NewReader(string(inputCode))
 	cmd.Stdout = &stdout

@@ -24,7 +24,7 @@ const programName = "program"
 var semaphore = make(chan struct{}, maxConcurrentCompilations)
 var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func executeIsolatedCommand(tempDir string, command string, commandArgs ...string) *exec.Cmd {
+func executeIsolatedCommand(tempDir string, useStdin bool, command string, commandArgs ...string) *exec.Cmd {
 	allArgs := []string{
 		"run",
 		"--rm",
@@ -37,11 +37,14 @@ func executeIsolatedCommand(tempDir string, command string, commandArgs ...strin
 		"--cap-drop=ALL",
 		"--security-opt=no-new-privileges",
 		"--tmpfs=/tmp:size=128m",
-		"-v", tempDir + ":/sandbox",
-		"--workdir=/sandbox",
-		"jule-clang",
-		command,
 	}
+	if tempDir != "" {
+		allArgs = append(allArgs, "-v", tempDir+":/sandbox")
+	}
+	if useStdin {
+		allArgs = append(allArgs, "-i")
+	}
+	allArgs = append(allArgs, "--workdir=/sandbox", "jule-clang", command)
 	allArgs = append(allArgs, commandArgs...)
 	cmd := exec.Command("docker", allArgs...)
 	cmd.Dir = tempDir
@@ -52,7 +55,7 @@ func getIrCode(tempDir string, data map[string]string, buildArguments []string) 
 	commandArgs := []string{"build", "--transpile", "."}
 	commandArgs = append(commandArgs, buildArguments...)
 
-	transpileCmd := executeIsolatedCommand(tempDir, "julec", commandArgs...)
+	transpileCmd := executeIsolatedCommand(tempDir, false, "julec", commandArgs...)
 	start := time.Now()
 	if output, err := transpileCmd.CombinedOutput(); err != nil {
 		// Jule error messages use ANSI color codes, so they must be filtered out for
@@ -81,6 +84,7 @@ func compileIrCode(tempDir string) error {
 	irPath := filepath.Join("dist", "ir.cpp")
 	compileCmd := executeIsolatedCommand(
 		tempDir,
+		false,
 		"clang++",
 		"-Wno-everything",
 		"--std=c++20",
@@ -281,7 +285,10 @@ func formatHandler(w http.ResponseWriter, r *http.Request) {
 	// Therefore you have to check directly stderr and stdout content.
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd := exec.Command("julefmt")
+
+	tempDir, _ := os.MkdirTemp("", "jule-playground-")
+
+	cmd := executeIsolatedCommand(tempDir, true, "julefmt")
 	cmd.Stdin = strings.NewReader(string(inputCode))
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

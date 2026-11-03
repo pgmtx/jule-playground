@@ -22240,6 +22240,20 @@ var keywords = [
   "select"
 ];
 var keywordRegex = new RegExp(`\\b(${keywords.join("|")})\\b`);
+var directives = [
+  "#pass",
+  "#build",
+  "#typedef",
+  "#cdef",
+  "#test",
+  "#export",
+  "#disable",
+  "#noinit",
+  "#inline",
+  "#noinline"
+];
+var directiveRegex = new RegExp(`(${directives.join("|")})`);
+console.log(directiveRegex);
 var style = HighlightStyle.define([
   { tag: tags.keyword, color: "#9900cc" },
   { tag: tags.typeName, color: "#cc978e" },
@@ -22279,8 +22293,10 @@ var jule = StreamLanguage.define({
       return "number";
     if (stream.match(typeRegex))
       return "typeName";
-    if (stream.match(keywordRegex))
+    if (stream.match(keywordRegex) || stream.match(directiveRegex))
       return "keyword";
+    if (stream.match(/#[a-zA-Z]*/))
+      return "invalid";
     if (stream.match(/(true|false|nil|iota)/))
       return "literal";
     if (stream.match(/[a-zA-Z_]\w*(?=\()/))

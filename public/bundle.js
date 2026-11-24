@@ -22253,7 +22253,6 @@ var directives = [
   "#noinline"
 ];
 var directiveRegex = new RegExp(`(${directives.join("|")})`);
-console.log(directiveRegex);
 var style = HighlightStyle.define([
   { tag: tags.keyword, color: "#9900cc" },
   { tag: tags.typeName, color: "#cc978e" },

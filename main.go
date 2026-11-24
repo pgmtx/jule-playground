@@ -18,16 +18,47 @@ import (
 	"time"
 )
 
-const maxConcurrentCompilations = 2
-const programName = "program"
+const (
+	programName = "program"
+	
+	transpileSlots = 3
+	cpuSlots = 2
 
-var semaphore = make(chan struct{}, maxConcurrentCompilations)
-var ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	acquireTimeout = 10 * time.Second
+	transpileTimeout = 20 * time.Second
+	compileTimeout = 20 * time.Second
+	runTimeout = 10 * time.Second
+	formatTimeout = 10 * time.Second
 
-func executeIsolatedCommand(tempDir string, useStdin bool, command string, commandArgs ...string) *exec.Cmd {
+	maxBodySize = 1 << 20 // 1 MiB
+)
+
+var (
+	transpileSemaphore = make(chan struct{}, transpileSlots)
+	cpuSemaphore = make(chan struct{}, cpuSlots)
+	ansi = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+)
+
+func acquire(ctx context.Context, semaphore chan struct{}) error {
+	ctx, cancel := context.WithTimeout(ctx, acquireTimeout)
+	defer cancel()
+	select {
+	case semaphore <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func release(semaphore chan struct{}) {
+	<-semaphore
+}
+
+func dockerCmd(ctx context.Context, name string, tempDir string, useStdin bool, command string, args ...string) *exec.Cmd {
 	allArgs := []string{
 		"run",
 		"--rm",
+		"--name", name,
 		"--network=none",
 		"--memory=512m",
 		"--cpus=1",
@@ -45,31 +76,55 @@ func executeIsolatedCommand(tempDir string, useStdin bool, command string, comma
 		allArgs = append(allArgs, "-i")
 	}
 	allArgs = append(allArgs, "--workdir=/sandbox", "jule-clang", command)
-	allArgs = append(allArgs, commandArgs...)
-	cmd := exec.Command("docker", allArgs...)
+	allArgs = append(allArgs, args...)
+	cmd := exec.CommandContext(ctx, "docker", allArgs...)
 	cmd.Dir = tempDir
 	return cmd
 }
 
-func getIrCode(tempDir string, data map[string]string, buildArguments []string) error {
-	commandArgs := []string{"build", "--transpile", "."}
-	commandArgs = append(commandArgs, buildArguments...)
+func runDocker(timeout time.Duration, tempDir string, stdin io.Reader, command string, args ...string) (out []byte, timedOut bool, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
-	transpileCmd := executeIsolatedCommand(tempDir, false, "julec", commandArgs...)
-	start := time.Now()
-	if output, err := transpileCmd.CombinedOutput(); err != nil {
-		_ = os.RemoveAll(tempDir)
-		// Jule error messages use ANSI color codes, so they must be filtered out for
-		// web display.
-		outputMessage := ansi.ReplaceAllString(string(output), "")
-		outputMessage = strings.TrimSpace(outputMessage)
-		// For some reason in some error messages there is a null character
-		// which is displayed as a square.
-		outputMessage = strings.ReplaceAll(outputMessage, "\x00", "")
-		return errors.New(outputMessage)
+	name := "jule-" + NewToken()
+	cmd := dockerCmd(ctx, name, tempDir, stdin != nil, command, args...)
+	if stdin != nil {
+		cmd.Stdin = stdin
 	}
-	duration := time.Since(start)
-	data["transpilationDuration"] = fmt.Sprintf("Transpilation took %d ms", duration.Milliseconds())
+
+	out, err = cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		_ = exec.Command("docker", "kill", name).Run()
+		return out, true, err
+	}
+	return out, false, err
+}
+
+func cleanOutput(output []byte) string {
+	// Jule error messages use ANSI color codes, so they must be filtered out
+	// for web display.
+	s := ansi.ReplaceAllString(string(output), "")
+	// For some reason, in some error messages there is a null character which
+	// is displayed as a square.
+	s = strings.ReplaceAll(s, "\x00", "")
+	return strings.TrimSpace(s)
+}
+
+func getIrCode(tempDir string, data map[string]string, buildArguments []string) error {
+	args := []string{"build", "--transpile", "."}
+	args = append(args, buildArguments...)
+
+	start := time.Now()
+	output, timedOut, err := runDocker(transpileTimeout, tempDir, nil, "julec", args...)
+	if timedOut {
+		return errors.New("transpilation timed out")
+	}
+
+	if err != nil {
+		return errors.New(cleanOutput(output))
+	}
+	
+	data["transpilationDuration"] = fmt.Sprintf("Transpilation took %d ms", time.Since(start).Milliseconds())
 
 	irPath := filepath.Join(tempDir, "dist", "ir.cpp")
 	irCode, err := os.ReadFile(irPath)
@@ -83,9 +138,8 @@ func getIrCode(tempDir string, data map[string]string, buildArguments []string) 
 
 func compileIrCode(tempDir string) error {
 	irPath := filepath.Join("dist", "ir.cpp")
-	compileCmd := executeIsolatedCommand(
-		tempDir,
-		false,
+	output, timedOut, err := runDocker(
+		compileTimeout, tempDir, nil,
 		"clang++",
 		"-Wno-everything",
 		"--std=c++20",
@@ -97,49 +151,26 @@ func compileIrCode(tempDir string) error {
 		"-ffp-contract=fast",
 		"-O0",
 		"-fno-strict-aliasing",
-		"-o",
-		programName,
+		"-o", programName,
 		irPath,
 	)
-	output, err := compileCmd.CombinedOutput()
+
+	if timedOut {
+		return errors.New("compilation timed out")
+	}
+	
 	if err != nil {
-		_ = os.RemoveAll(tempDir)
 		return errors.New(string(output))
 	}
+	
 	return nil
 }
 
 func getCodeOutput(tempDir string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	output, timedOut, err := runDocker(runTimeout, tempDir, nil, "./" + programName)
 
-	containerName := filepath.Base(tempDir)
-	runCmd := exec.CommandContext(
-		ctx,
-		"docker", "run",
-		"--rm",
-		"--name", containerName,
-		"--network=none",
-		"--memory=512m",
-		"--cpus=1",
-		"--pids-limit=50", // to avoid fork bombs
-		"-u", "1000:1000", // to avoid root access
-		"--read-only",
-		"--cap-drop=ALL",
-		"--security-opt=no-new-privileges",
-		"--tmpfs=/tmp:size=128m",
-		"-v", tempDir+":/sandbox",
-		"--workdir=/sandbox",
-		"jule-clang",
-		"./program",
-	)
-	runCmd.Dir = tempDir
-	output, err := runCmd.CombinedOutput()
-
-	if ctx.Err() == context.DeadlineExceeded {
-		killCmd := exec.Command("docker", "kill", containerName)
-		_ = killCmd.Run()
-		return "", errors.New("execution timed out after 30s, check for infinite loops or blocking calls")
+	if timedOut {
+		return "", fmt.Errorf("execution timed out after %s, check for infinite loops or blocking calls", runTimeout)
 	}
 
 	if err == nil {
@@ -153,123 +184,166 @@ func getCodeOutput(tempDir string) (string, error) {
 	return "", errors.New(string(output))
 }
 
-func generateHttpError(w http.ResponseWriter, data map[string]string, errorMessage string) {
-	w.WriteHeader(http.StatusBadRequest)
-	data["errorMessage"] = errorMessage
-	_ = json.NewEncoder(w).Encode(data)
+func fail(w http.ResponseWriter, status int, message string) {
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"errorMessage": message,
+	})
+}
+
+func readBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	return io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodySize))
 }
 
 func transpileHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	data := make(map[string]string)
 
 	if r.Method != http.MethodPost {
-		generateHttpError(w, data, "Method not allowed")
+		fail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	semaphore <- struct{}{}        // acquire
-	defer func() { <-semaphore }() // release
-
-	tempDir, err := os.MkdirTemp("", "jule-playground-")
+	body, err := readBody(w, r)
 	if err != nil {
-		generateHttpError(w, data, err.Error())
+		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	_ = os.Chmod(tempDir, 0o777)
-	codePath := filepath.Join(tempDir, "main.jule")
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		generateHttpError(w, data, err.Error())
-		return
-	}
-
-	var info map[string]string
+	info := make(map[string]string)
 	if err := json.Unmarshal(body, &info); err != nil {
-		generateHttpError(w, data, "Could not parse body parameters")
+		fail(w, http.StatusBadRequest, "Could not parse body parameters")
 		return
 	}
 
 	inputCode, ok := info["inputCode"]
 	if !ok {
-		generateHttpError(w, data, "Could not find the required body parameter 'inputCode'")
+		fail(w, http.StatusBadRequest, "Could not find the required body parameter 'inputCode'")
 		return
 	}
 
-	buildArguments := make([]string, 0)
-	if args, ok := info["buildArguments"]; ok {
-		buildArguments = strings.Fields(args)
+	// Using an invalid key on info returns an empty string
+	buildArguments := strings.Fields(info["buildArguments"])
+
+	if err := acquire(r.Context(), transpileSemaphore); err != nil {
+		fail(w, http.StatusServiceUnavailable, "Server busy, try again later")
+		return
+	}
+	defer release(transpileSemaphore)
+
+	tempDir, err := os.MkdirTemp("", "jule-playground-")
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
+	success := false
+	defer func(){
+		if !success {
+			_ = os.RemoveAll(tempDir)
+		}
+	}()
+
+	_ = os.Chmod(tempDir, 0o777)
+	codePath := filepath.Join(tempDir, "main.jule")
 	if err := os.WriteFile(codePath, []byte(inputCode), 0o644); err != nil {
-		generateHttpError(w, data, "Could not write to "+codePath)
+		fail(w, http.StatusInternalServerError, "Could not write source file")
 		return
 	}
 
+	data := make(map[string]string)
 	if err := getIrCode(tempDir, data, buildArguments); err != nil {
-		generateHttpError(w, data, err.Error())
+		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	data["tempDir"] = tempDir
+
+	success = true
+	// We return a token instead of the temporary directory path
+	data["tempDir"] = AddSession(tempDir)
 	_ = json.NewEncoder(w).Encode(data)
 }
 
 func compileHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	data := make(map[string]string)
 
 	if r.Method != http.MethodPost {
-		generateHttpError(w, data, "Method not allowed")
+		fail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	tempDirBytes, err := io.ReadAll(r.Body)
+	body, err := readBody(w, r)
 	if err != nil {
-		generateHttpError(w, data, err.Error())
+		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	tempDir := string(tempDirBytes)
+	token := strings.TrimSpace(string(body))
+	tempDir, ok := GetSession(token)
+	if !ok {
+		fail(w, http.StatusNotFound, "Unknown or expired session")
+		return
+	}
+
+	if err := acquire(r.Context(), cpuSemaphore); err != nil {
+		fail(w, http.StatusServiceUnavailable, "Server busy, try again later")
+		return
+	}
+	defer release(cpuSemaphore)
 
 	start := time.Now()
 	if err := compileIrCode(tempDir); err != nil {
-		generateHttpError(w, data, err.Error())
+		if dir, ok := TakeSession(token); ok {
+			_ = os.RemoveAll(dir)
+		}
+		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	duration := time.Since(start)
-	data["compilationDuration"] = fmt.Sprintf("Compilation took %.2f s", duration.Seconds())
-	data["tempDir"] = tempDir
+
+	data := map[string]string{
+		"compilationDuration": fmt.Sprintf("Compilation took %.2f s", time.Since(start).Seconds()),
+		"tempDir": token,
+	}
 	_ = json.NewEncoder(w).Encode(data)
 }
 
 func runHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	data := make(map[string]string)
 
 	if r.Method != http.MethodPost {
-		generateHttpError(w, data, "Method not allowed")
+		fail(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	tempDirBytes, err := io.ReadAll(r.Body)
+	body, err := readBody(w, r)
 	if err != nil {
-		generateHttpError(w, data, err.Error())
+		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	tempDir := string(tempDirBytes)
+
+	token := strings.TrimSpace(string(body))
+	tempDir, ok := TakeSession(token)
+	if !ok {
+		fail(w, http.StatusNotFound, "Unknown or expired session")
+		return
+	}
 
 	defer func() {
 		_ = os.RemoveAll(tempDir)
 	}()
 
-	codeOutput, err := getCodeOutput(tempDir)
-	if err != nil {
-		generateHttpError(w, data, err.Error())
+	if err := acquire(r.Context(), cpuSemaphore); err != nil {
+		fail(w, http.StatusServiceUnavailable, "Server busy, try again later")
 		return
 	}
-	data["codeOutput"] = codeOutput
-	_ = json.NewEncoder(w).Encode(data)
+	defer release(cpuSemaphore)
+
+	codeOutput, err := getCodeOutput(tempDir)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"codeOutput": codeOutput,
+	})
 }
 
 func formatHandler(w http.ResponseWriter, r *http.Request) {
@@ -278,39 +352,55 @@ func formatHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	inputCode, err := io.ReadAll(r.Body)
+	inputCode, err := readBody(w, r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// When an error occurs, julefmt writes to stderr but still returns 0 as an exit code.
-	// Therefore you have to check directly stderr and stdout content.
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	if err := acquire(r.Context(), transpileSemaphore); err != nil {
+		http.Error(w, "Server busy, try again later", http.StatusServiceUnavailable)
+		return
+	}
+	defer release(transpileSemaphore)
 
 	tempDir, err := os.MkdirTemp("", "jule-playground-")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	
 	defer func() {
 		_ = os.RemoveAll(tempDir)
 	}()
 
 	_ = os.Chmod(tempDir, 0o777)
-	cmd := executeIsolatedCommand(tempDir, true, "julefmt")
-	cmd.Stdin = strings.NewReader(string(inputCode))
+
+
+	ctx, cancel := context.WithTimeout(context.Background(), formatTimeout)
+	defer cancel()
+
+	// When an error occurs, julefmt writes to stderr but still returns 0 as an exit code.
+	// Therefore you have to check directly stderr and stdout content.
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	name := "jule-" + NewToken()
+
+	cmd := dockerCmd(ctx, name, tempDir, true, "julefmt")
+	cmd.Stdin = bytes.NewReader(inputCode)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err = cmd.Run()
 
-	if err != nil {
-		errorMessage := fmt.Sprintf("Exit error: %v", err)
-		http.Error(w, errorMessage, http.StatusInternalServerError)
-	} else if stderr.Len() != 0 {
+	switch {
+	case ctx.Err() == context.DeadlineExceeded:
+		_ = exec.Command("docker", "kill", name).Run()
+		http.Error(w, "Formatting timed out", http.StatusInternalServerError)
+	case err != nil:
+		http.Error(w, fmt.Sprintf("Exit error: %v", err), http.StatusInternalServerError)
+	case stderr.Len() != 0:
 		http.Error(w, stderr.String(), http.StatusInternalServerError)
-	} else if stdout.Len() != 0 {
+	case stdout.Len() != 0:
 		_, _ = fmt.Fprint(w, stdout.String())
 	}
 }
@@ -318,6 +408,9 @@ func formatHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	port := flag.Int("port", 8080, "server port")
 	flag.Parse()
+
+	go CleanupLoop()
+	
 	fs := http.FileServer(http.Dir("./public"))
 	http.Handle("/playground/", http.StripPrefix("/playground/", fs))
 
@@ -326,7 +419,7 @@ func main() {
 	http.HandleFunc("/playground/run", runHandler)
 	http.HandleFunc("/playground/format", formatHandler)
 
-	addr := fmt.Sprintf(":%d", *port)
-	fmt.Println("http://0.0.0.0" + addr + "/playground/")
-	log.Fatal(http.ListenAndServe(addr, nil))
+	address := fmt.Sprintf(":%d", *port)
+	fmt.Println("http://0.0.0.0" + address + "/playground/")
+	log.Fatal(http.ListenAndServe(address, nil))
 }

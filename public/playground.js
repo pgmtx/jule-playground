@@ -97,7 +97,6 @@ const directives = [
 
 // NOTE: \b works for letters and underscores, not for #
 const directiveRegex = new RegExp(`(${directives.join("|")})`);
-console.log(directiveRegex);
 
 const style = HighlightStyle.define([
 	{ tag: tags.keyword, color: "#9900cc" },
@@ -142,7 +141,8 @@ const jule = StreamLanguage.define({
 		if (stream.match(/'[^']*'/)) return "invalid";
 		if (stream.match(/\b\d+(\.\d+)?i?\b/)) return "number";
 		if (stream.match(typeRegex)) return "typeName";
-		if (stream.match(keywordRegex) || stream.match(directiveRegex)) return "keyword";
+		if (stream.match(keywordRegex) || stream.match(directiveRegex))
+			return "keyword";
 		if (stream.match(/#[a-zA-Z]*/)) return "invalid";
 		if (stream.match(/(true|false|nil|iota)/)) return "literal";
 		if (stream.match(/[a-zA-Z_]\w*(?=\()/)) return "name";
